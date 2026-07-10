@@ -7,11 +7,9 @@ export const corsOptions: CorsOptions = {
     
     // Normalize configured client url by removing trailing slashes
     const configuredClient = env.clientUrl.replace(/\/$/, "");
-    const allowedOrigins = [
-      configuredClient,
-      "http://localhost:5173",
-      "https://auction-assignment.vercel.app"
-    ];
+    const allowedOrigins = env.isDevelopment
+      ? [configuredClient, "http://localhost:5173"]
+      : [configuredClient];
 
     if (allowedOrigins.includes(origin.replace(/\/$/, ""))) {
       callback(null, true);

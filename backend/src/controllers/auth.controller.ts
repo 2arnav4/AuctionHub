@@ -1,10 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AppError } from "../middleware/errorHandler.js";
+import { env } from "../config/env.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "mini-auction-room-jwt-secret-key-123";
-
-const isProd = process.env.NODE_ENV === "production";
+const isProd = env.nodeEnv === "production";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -48,7 +47,7 @@ export async function loginHandler(
     // 2. Sign JWT Token
     const token = jwt.sign(
       { username: trimmedUsername, role },
-      JWT_SECRET,
+      env.jwtSecret,
       { expiresIn: "24h" }
     );
 
@@ -101,7 +100,7 @@ export async function meHandler(
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { username: string; role: string };
+      const decoded = jwt.verify(token, env.jwtSecret) as { username: string; role: string };
       res.status(200).json({
         user: {
           username: decoded.username,
