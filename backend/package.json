@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node server.js",
-    "dev": "npm run build && node server.js"
+    "dev": "npm run build && node server.js",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test dist/utils/auction.test.js"
   },
   "dependencies": {
     "@types/cookie-parser": "^1.4.10",

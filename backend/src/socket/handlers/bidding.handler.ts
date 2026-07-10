@@ -2,13 +2,14 @@ import type { Server, Socket } from "socket.io";
 import { AuctionItem } from "../../models/item.model.js";
 import { Bid } from "../../models/bid.model.js";
 import { Room } from "../../models/room.model.js";
+import { isValidPositiveAmount } from "../../utils/auction.js";
 
 /**
  * Registers Bidding-related event listeners for a given Socket instance.
  */
 export function registerBiddingHandlers(io: Server, socket: Socket): void {
   // Event: bid:place
-  socket.on("bid:place", async (data: { amount: number }) => {
+  socket.on("bid:place", async (data: { amount?: unknown }) => {
     try {
       const participant = socket.data.participant;
       const cachedRoom = socket.data.room;
@@ -61,11 +62,18 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 3. Validate bid amount (must be strictly higher than current bid)
-      const currentHighestBid = activeItem.currentBid;
-      const minimumBidRequired = currentHighestBid + 1;
+      const amount = data.amount;
+      if (!isValidPositiveAmount(amount)) {
+        socket.emit("bid:rejected", {
+          reason: "Bid amount must be a valid number.",
+          minimumBid: activeItem.currentBid + 1,
+        });
+        return;
+      }
 
-      if (data.amount < minimumBidRequired) {
+      // 3. Validate bid amount (must be strictly higher than current bid)
+      const minimumBidRequired = activeItem.currentBid + 1;
+      if (amount < minimumBidRequired) {
         socket.emit("bid:rejected", {
           reason: `Bid amount is too low. Minimum required: ₹${minimumBidRequired}`,
           minimumBid: minimumBidRequired,
@@ -73,29 +81,55 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 4. Create and Save Bid
+      // 4. Persist a candidate bid before atomically claiming the new highest amount.
       const newBid = new Bid({
         roomId: room._id,
         itemId: activeItem._id,
         participantId: participant._id,
         username: participant.username,
-        amount: data.amount,
+        amount,
       });
       await newBid.save();
 
-      // 5. Update active item details
-      activeItem.currentBid = data.amount;
-      activeItem.highestBidderId = participant._id as any;
-      activeItem.highestBidderUsername = participant.username;
-      await activeItem.save();
+      // A conditional update prevents concurrent requests from accepting a stale/lower bid.
+      const updatedItem = await AuctionItem.findOneAndUpdate(
+        {
+          _id: activeItem._id,
+          status: "active",
+          endsAt: { $gt: new Date() },
+          currentBid: { $lt: amount },
+        },
+        {
+          $set: {
+            currentBid: amount,
+            highestBidderId: participant._id,
+            highestBidderUsername: participant.username,
+          },
+        },
+        { new: true },
+      );
+
+      if (!updatedItem) {
+        await Bid.deleteOne({ _id: newBid._id });
+        const latestItem = await AuctionItem.findById(activeItem._id);
+        const latestMinimumBid = latestItem ? latestItem.currentBid + 1 : 1;
+        const reason = latestItem?.endsAt && latestItem.endsAt <= new Date()
+          ? "Bidding time has expired for this item."
+          : `Bid amount is too low. Minimum required: ₹${latestMinimumBid}`;
+        socket.emit("bid:rejected", {
+          reason,
+          minimumBid: latestMinimumBid,
+        });
+        return;
+      }
 
       // 6. Broadcast successful bid
       io.to(socketRoomId).emit("bid:accepted", {
         bid: newBid,
-        item: activeItem,
+        item: updatedItem,
       });
 
-      console.log(`Bid of ₹${data.amount} placed by ${participant.username} on item ${activeItem.name}`);
+      console.log(`Bid of ₹${amount} placed by ${participant.username} on item ${updatedItem.name}`);
     } catch (error) {
       console.error("Error in bid:place handler:", error);
       socket.emit("bid:rejected", {

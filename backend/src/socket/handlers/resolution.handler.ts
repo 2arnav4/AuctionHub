@@ -1,63 +1,142 @@
 import type { Server, Socket } from "socket.io";
+import { env } from "../../config/env.js";
 import { Room } from "../../models/room.model.js";
-import { AuctionItem } from "../../models/item.model.js";
+import { AuctionItem, type IAuctionItem } from "../../models/item.model.js";
+import { getAuctionEndsAt, getExpiryResolution } from "../../utils/auction.js";
 
-/**
- * Shared progression state machine logic to load the next pending item or complete the auction.
- */
-async function progressAuction(io: Server, roomCode: string, roomId: string) {
-  const socketRoomId = `room:${roomCode}`;
+type Resolution = "sold" | "unsold";
 
-  // 1. Fetch Room details
-  const freshRoom = await Room.findById(roomId);
-  if (!freshRoom) {
-    console.error(`[Progression] Room not found: ${roomId}`);
-    return;
-  }
+const auctionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  // 2. Query next pending item
-  const pendingItems = await AuctionItem.find({
-    roomId: freshRoom._id,
-    status: "pending",
-  }).sort({ createdAt: 1 });
+function clearAuctionTimer(roomId: string): void {
+  const timer = auctionTimers.get(roomId);
+  if (timer) clearTimeout(timer);
+  auctionTimers.delete(roomId);
+}
 
-  if (pendingItems.length > 0) {
-    // There are still upcoming items
-    const nextItem = pendingItems[0];
-    nextItem.status = "active";
-    await nextItem.save();
+/** Schedule an authoritative expiry for the active item in a room. */
+export function scheduleAuctionTimer(io: Server, roomId: string, endsAt: Date): void {
+  clearAuctionTimer(roomId);
 
-    freshRoom.currentItemId = nextItem._id as any;
-    await freshRoom.save();
+  const delay = Math.max(0, endsAt.getTime() - Date.now());
+  const timer = setTimeout(() => {
+    void expireActiveItem(io, roomId);
+  }, delay);
 
-    // Broadcast item activation
-    io.to(socketRoomId).emit("item:activated", {
-      item: nextItem,
-      startedAt: new Date().toISOString(),
-    });
+  auctionTimers.set(roomId, timer);
+}
 
-    console.log(`[Progression] Item ${nextItem.name} activated in room ${roomCode}`);
-  } else {
-    // No items left -> complete the auction
-    freshRoom.status = "completed";
-    freshRoom.currentItemId = null;
-    await freshRoom.save();
+/** Recreate timers after a backend restart from the persisted room state. */
+export async function restoreAuctionTimers(io: Server): Promise<void> {
+  const liveRooms = await Room.find({
+    status: "live",
+    currentItemId: { $ne: null },
+  });
 
-    // Broadcast auction completion
-    io.to(socketRoomId).emit("auction:completed", {
-      room: freshRoom,
-    });
-
-    console.log(`[Progression] Room ${roomCode} auction COMPLETED.`);
+  for (const room of liveRooms) {
+    const endsAt = room.endsAt ?? getAuctionEndsAt(Date.now(), env.auctionItemDurationSeconds);
+    if (!room.endsAt) {
+      room.endsAt = endsAt;
+      await room.save();
+      await AuctionItem.updateOne(
+        { _id: room.currentItemId, status: "active" },
+        { $set: { endsAt } },
+      );
+    }
+    scheduleAuctionTimer(io, room._id.toString(), endsAt);
   }
 }
 
-/**
- * Registers Item Resolution (Sell/Unsold) event listeners for a given Socket instance.
- */
+async function progressAuction(io: Server, roomId: string): Promise<void> {
+  const room = await Room.findById(roomId);
+  if (!room || room.status !== "live") return;
+
+  const endsAt = getAuctionEndsAt(Date.now(), env.auctionItemDurationSeconds);
+  const nextItem = await AuctionItem.findOneAndUpdate(
+    { roomId: room._id, status: "pending" },
+    { $set: { status: "active", endsAt } },
+    { new: true, sort: { createdAt: 1 } },
+  );
+
+  const socketRoomId = `room:${room.code}`;
+
+  if (!nextItem) {
+    const completedRoom = await Room.findOneAndUpdate(
+      { _id: room._id, status: "live" },
+      { $set: { status: "completed", currentItemId: null, endsAt: null } },
+      { new: true },
+    );
+
+    clearAuctionTimer(roomId);
+    if (completedRoom) io.to(socketRoomId).emit("auction:completed", { room: completedRoom });
+    return;
+  }
+
+  const updatedRoom = await Room.findOneAndUpdate(
+    { _id: room._id, status: "live" },
+    { $set: { currentItemId: nextItem._id, endsAt } },
+    { new: true },
+  );
+
+  if (!updatedRoom) return;
+
+  scheduleAuctionTimer(io, roomId, endsAt);
+  io.to(socketRoomId).emit("item:activated", {
+    item: nextItem,
+    startedAt: new Date().toISOString(),
+    endsAt: endsAt.toISOString(),
+  });
+}
+
+async function resolveActiveItem(
+  io: Server,
+  roomId: string,
+  requestedResolution: Resolution | "expired",
+): Promise<IAuctionItem | null> {
+  const room = await Room.findById(roomId);
+  if (!room || room.status !== "live" || !room.currentItemId) return null;
+
+  const activeItem = await AuctionItem.findById(room.currentItemId);
+  if (!activeItem || activeItem.status !== "active") return null;
+
+  const resolution: Resolution = requestedResolution === "expired"
+    ? getExpiryResolution(Boolean(activeItem.highestBidderId))
+    : requestedResolution;
+
+  if (resolution === "sold" && !activeItem.highestBidderId) {
+    return null;
+  }
+
+  const update = resolution === "unsold"
+    ? { status: "unsold", highestBidderId: null, highestBidderUsername: null }
+    : { status: "sold" };
+
+  // Claim the active item conditionally. Only one simultaneous resolution can win.
+  const resolvedItem = await AuctionItem.findOneAndUpdate(
+    { _id: activeItem._id, status: "active" },
+    { $set: update },
+    { new: true },
+  );
+  if (!resolvedItem) return null;
+
+  clearAuctionTimer(roomId);
+  const socketRoomId = `room:${room.code}`;
+  io.to(socketRoomId).emit("item:ended", { item: resolvedItem, resolution });
+  await progressAuction(io, roomId);
+
+  return resolvedItem;
+}
+
+async function expireActiveItem(io: Server, roomId: string): Promise<void> {
+  try {
+    await resolveActiveItem(io, roomId, "expired");
+  } catch (error) {
+    console.error("Error expiring auction item:", error);
+  }
+}
+
 export function registerResolutionHandlers(io: Server, socket: Socket): void {
-  // Event: item:sell
-  socket.on("item:sell", async () => {
+  const resolve = (resolution: Resolution) => async () => {
     try {
       const participant = socket.data.participant;
       const cachedRoom = socket.data.room;
@@ -66,114 +145,24 @@ export function registerResolutionHandlers(io: Server, socket: Socket): void {
         socket.emit("error", { message: "Not authenticated for any room." });
         return;
       }
-
-      // Fetch fresh room details from database
-      const room = await Room.findById(cachedRoom._id);
-      if (!room) {
-        socket.emit("error", { message: "Room not found." });
-        return;
-      }
-
-      // 1. Verify user is admin
       if (participant.role !== "admin") {
         socket.emit("error", { message: "Access denied: Only room hosts can resolve items." });
         return;
       }
 
-      // 2. Fetch active item
-      if (!room.currentItemId) {
-        socket.emit("error", { message: "No active item to sell." });
-        return;
+      const resolvedItem = await resolveActiveItem(io, cachedRoom._id.toString(), resolution);
+      if (!resolvedItem) {
+        const message = resolution === "sold"
+          ? "An item can only be sold after at least one accepted bid."
+          : "Item is not currently active or has already been resolved.";
+        socket.emit("error", { message });
       }
-
-      const activeItem = await AuctionItem.findById(room.currentItemId);
-      if (!activeItem || activeItem.status !== "active") {
-        socket.emit("error", { message: "Item is not currently active." });
-        return;
-      }
-
-      // 3. Update status to sold
-      activeItem.status = "sold";
-      await activeItem.save();
-
-      const roomCode = room.code;
-      const socketRoomId = `room:${roomCode}`;
-
-      // 4. Broadcast item:ended (sold)
-      io.to(socketRoomId).emit("item:ended", {
-        item: activeItem,
-        resolution: "sold",
-      });
-
-      console.log(`Host sold item ${activeItem.name} for ₹${activeItem.currentBid} to user ${activeItem.highestBidderUsername || "none"}`);
-
-      // 5. Progress to next item or end auction
-      await progressAuction(io, roomCode, room._id.toString());
     } catch (error) {
-      console.error("Error in item:sell handler:", error);
+      console.error("Error resolving auction item:", error);
       socket.emit("error", { message: "Internal server error resolving item." });
     }
-  });
+  };
 
-  // Event: item:unsold
-  socket.on("item:unsold", async () => {
-    try {
-      const participant = socket.data.participant;
-      const cachedRoom = socket.data.room;
-
-      if (!participant || !cachedRoom) {
-        socket.emit("error", { message: "Not authenticated for any room." });
-        return;
-      }
-
-      // Fetch fresh room details from database
-      const room = await Room.findById(cachedRoom._id);
-      if (!room) {
-        socket.emit("error", { message: "Room not found." });
-        return;
-      }
-
-      // 1. Verify user is admin
-      if (participant.role !== "admin") {
-        socket.emit("error", { message: "Access denied: Only room hosts can resolve items." });
-        return;
-      }
-
-      // 2. Fetch active item
-      if (!room.currentItemId) {
-        socket.emit("error", { message: "No active item to mark unsold." });
-        return;
-      }
-
-      const activeItem = await AuctionItem.findById(room.currentItemId);
-      if (!activeItem || activeItem.status !== "active") {
-        socket.emit("error", { message: "Item is not currently active." });
-        return;
-      }
-
-      // 3. Update status to unsold
-      activeItem.status = "unsold";
-      // Clear highest bidder information
-      activeItem.highestBidderId = null;
-      activeItem.highestBidderUsername = null;
-      await activeItem.save();
-
-      const roomCode = room.code;
-      const socketRoomId = `room:${roomCode}`;
-
-      // 4. Broadcast item:ended (unsold)
-      io.to(socketRoomId).emit("item:ended", {
-        item: activeItem,
-        resolution: "unsold",
-      });
-
-      console.log(`Host marked item ${activeItem.name} as UNSOLD`);
-
-      // 5. Progress to next item or end auction
-      await progressAuction(io, roomCode, room._id.toString());
-    } catch (error) {
-      console.error("Error in item:unsold handler:", error);
-      socket.emit("error", { message: "Internal server error resolving item." });
-    }
-  });
+  socket.on("item:sell", resolve("sold"));
+  socket.on("item:unsold", resolve("unsold"));
 }

@@ -9,6 +9,7 @@ export interface IAuctionItem extends Document {
   highestBidderId?: mongoose.Types.ObjectId | null;
   highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
+  endsAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +55,10 @@ const AuctionItemSchema = new Schema<IAuctionItem>(
       enum: ["pending", "active", "sold", "unsold"],
       default: "pending",
       required: true,
+    },
+    endsAt: {
+      type: Date,
+      default: null,
     },
   },
   {

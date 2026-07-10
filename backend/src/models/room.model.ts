@@ -6,6 +6,7 @@ export interface IRoom extends Document {
   status: "lobby" | "live" | "completed";
   adminParticipantId?: mongoose.Types.ObjectId | null;
   currentItemId?: mongoose.Types.ObjectId | null;
+  endsAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +41,10 @@ const RoomSchema = new Schema<IRoom>(
     currentItemId: {
       type: Schema.Types.ObjectId,
       ref: "AuctionItem",
+      default: null,
+    },
+    endsAt: {
+      type: Date,
       default: null,
     },
   },

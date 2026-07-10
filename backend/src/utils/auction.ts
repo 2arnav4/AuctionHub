@@ -1,0 +1,13 @@
+export type ExpiryResolution = "sold" | "unsold";
+
+export function isValidPositiveAmount(amount: unknown): amount is number {
+  return typeof amount === "number" && Number.isFinite(amount) && amount > 0;
+}
+
+export function getAuctionEndsAt(now: number, durationSeconds: number): Date {
+  return new Date(now + durationSeconds * 1000);
+}
+
+export function getExpiryResolution(hasHighestBidder: boolean): ExpiryResolution {
+  return hasHighestBidder ? "sold" : "unsold";
+}

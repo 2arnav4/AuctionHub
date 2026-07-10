@@ -1,6 +1,9 @@
 import type { Server, Socket } from "socket.io";
 import { Room } from "../../models/room.model.js";
 import { AuctionItem } from "../../models/item.model.js";
+import { env } from "../../config/env.js";
+import { scheduleAuctionTimer } from "./resolution.handler.js";
+import { getAuctionEndsAt } from "../../utils/auction.js";
 
 /**
  * Registers Auction-related event listeners for a given Socket instance.
@@ -48,14 +51,17 @@ export function registerAuctionHandlers(io: Server, socket: Socket): void {
 
       const activeItem = pendingItems[0];
       const startedAt = new Date();
+      const endsAt = getAuctionEndsAt(startedAt.getTime(), env.auctionItemDurationSeconds);
 
       // 4. Update item status to active
       activeItem.status = "active";
+      activeItem.endsAt = endsAt;
       await activeItem.save();
 
       // 5. Update room status to live and link currentItemId
       freshRoom.status = "live";
-      freshRoom.currentItemId = activeItem._id as any;
+      freshRoom.currentItemId = activeItem._id;
+      freshRoom.endsAt = endsAt;
       await freshRoom.save();
 
       // Keep cached room reference inside socket.data in sync
@@ -63,6 +69,7 @@ export function registerAuctionHandlers(io: Server, socket: Socket): void {
 
       const roomCode = freshRoom.code;
       const socketRoomId = `room:${roomCode}`;
+      scheduleAuctionTimer(io, freshRoom._id.toString(), endsAt);
 
       // 6. Broadcast event: auction:started
       io.to(socketRoomId).emit("auction:started", {
@@ -73,6 +80,7 @@ export function registerAuctionHandlers(io: Server, socket: Socket): void {
       io.to(socketRoomId).emit("item:activated", {
         item: activeItem,
         startedAt: startedAt.toISOString(),
+        endsAt: endsAt.toISOString(),
       });
 
       console.log(`Lobby ${roomCode} transitioned to LIVE. Active item: ${activeItem.name}`);

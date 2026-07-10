@@ -15,6 +15,7 @@ import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSocket } from "../../hooks/useSocket";
 import { getSocket } from "../../services/socket";
+import type { AuctionItem, Bid } from "../../services/api";
 
 interface ToastMsg {
   id: string;
@@ -50,6 +51,7 @@ export function AuctionPage() {
   
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [activityLogs, setActivityLogs] = useState<string[]>([]);
+  const [clockNow, setClockNow] = useState(() => Date.now());
 
   const addToast = useCallback((message: string, type: "info" | "success" | "error" = "info") => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -60,13 +62,23 @@ export function AuctionPage() {
   }, []);
 
   const minBidVal = activeItem ? (activeItem.currentBid ?? activeItem.startingBid ?? 0) + 1 : 1;
+  const endsAtMs = room?.endsAt ? Date.parse(room.endsAt) : Number.NaN;
+  const secondsRemaining = Number.isFinite(endsAtMs)
+    ? Math.max(0, Math.ceil((endsAtMs - clockNow) / 1000))
+    : 0;
+
+  useEffect(() => {
+    if (!Number.isFinite(endsAtMs)) return;
+    const interval = window.setInterval(() => setClockNow(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, [endsAtMs]);
 
   // Listen to live events for broadcast logs and toast notifications
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
-    const handleItemEnded = (data: { item: any; resolution: "sold" | "unsold" }) => {
+    const handleItemEnded = (data: { item: AuctionItem; resolution: "sold" | "unsold" }) => {
       const username = data.item.highestBidderUsername || "none";
       const price = data.item.currentBid || data.item.startingBid;
       const formattedMsg = data.resolution === "sold"
@@ -77,13 +89,15 @@ export function AuctionPage() {
       addToast(formattedMsg, "info");
     };
 
-    const handleItemActivated = (data: { item: any }) => {
+    const handleItemActivated = (data: { item: AuctionItem }) => {
       const msg = `Item ${data.item.name} is active. Minimum bid: ₹${(data.item.currentBid || data.item.startingBid).toLocaleString()}`;
       setActivityLogs((prev) => [...prev, `✦ ${msg}`]);
       addToast(`New item active: ${data.item.name}`, "info");
+      setLocalBidErr(null);
+      setBidVal("");
     };
 
-    const handleBidAccepted = (data: { bid: any }) => {
+    const handleBidAccepted = (data: { bid: Bid }) => {
       const msg = `Bid of ₹${data.bid.amount.toLocaleString()} accepted for ${data.bid.username}`;
       setActivityLogs((prev) => [...prev, `✔ ${msg}.`]);
       addToast(`New bid: ₹${data.bid.amount.toLocaleString()} by ${data.bid.username}`, "success");
@@ -93,29 +107,22 @@ export function AuctionPage() {
       addToast(data.reason, "error");
     };
 
+    const handleServerError = (data: { message: string }) => addToast(data.message, "error");
+
     socket.on("item:ended", handleItemEnded);
     socket.on("item:activated", handleItemActivated);
     socket.on("bid:accepted", handleBidAccepted);
     socket.on("bid:rejected", handleBidRejected);
+    socket.on("error", handleServerError);
 
     return () => {
       socket.off("item:ended", handleItemEnded);
       socket.off("item:activated", handleItemActivated);
       socket.off("bid:accepted", handleBidAccepted);
       socket.off("bid:rejected", handleBidRejected);
+      socket.off("error", handleServerError);
     };
   }, [addToast]);
-
-  // Initial log entry on item load
-  useEffect(() => {
-    if (activeItem) {
-      const msg = `✦ Item ${activeItem.name} is active. Minimum bid: ₹${minBidVal.toLocaleString()}.`;
-      setActivityLogs((prev) => {
-        if (prev.includes(msg)) return prev;
-        return [...prev, msg];
-      });
-    }
-  }, [activeItem?._id, minBidVal]);
 
   // Security check: Redirect if the user has no session or is in the wrong room
   const hasNoAccess = !sessionUsername || !sessionRole || sessionRoomCode !== code;
@@ -126,12 +133,6 @@ export function AuctionPage() {
       navigate(`/results/${code}`);
     }
   }, [room?.status, code, navigate]);
-
-  // Clear local bid validation messages when active item changes
-  useEffect(() => {
-    setLocalBidErr(null);
-    setBidVal("");
-  }, [activeItem?._id]);
 
   const handleLeaveRoom = () => {
     clearSession();
@@ -147,7 +148,7 @@ export function AuctionPage() {
     const currentPrice = activeItem.currentBid ?? activeItem.startingBid ?? 0;
     const minBidRequired = currentPrice + 1;
 
-    if (isNaN(bidAmount) || bidAmount < minBidRequired) {
+    if (!Number.isFinite(bidAmount) || bidAmount < minBidRequired) {
       setLocalBidErr(`Bid must be at least ₹${minBidRequired.toLocaleString()}`);
       return;
     }
@@ -252,6 +253,10 @@ export function AuctionPage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500 mr-2">
                 LIVE AUCTION
               </span>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${secondsRemaining <= 10 ? "border-red-500/30 bg-red-500/10 text-red-400" : "border-accent/30 bg-accent/10 text-accent"}`}>
+                <Clock className="h-3 w-3" />
+                {secondsRemaining}s
+              </span>
               {socketStatus === "connected" && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 border border-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -325,7 +330,7 @@ export function AuctionPage() {
                   <Tag className="h-4 w-4 text-accent" />
                   Active Auction Item
                 </span>
-                {activeItem && (
+                {activeItem && secondsRemaining > 0 && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-500/15 border border-green-500/30 px-2.5 py-0.5 rounded-full">
                     Bidding Open
                   </span>
@@ -388,7 +393,7 @@ export function AuctionPage() {
             </div>
 
             {/* Bidding Placement input Box (Visible to Bidders only) */}
-            {!isAdmin && activeItem && (
+            {!isAdmin && activeItem && secondsRemaining > 0 && (
               <div className="border border-border bg-surface-raised/40 p-6 rounded-xl space-y-4 shadow-lg">
                 <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
                   <DollarSign className="h-4 w-4 text-accent" />

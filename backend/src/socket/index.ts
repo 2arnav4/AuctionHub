@@ -6,6 +6,7 @@ import { registerRoomHandlers } from "./handlers/room.handler.js";
 import { registerAuctionHandlers } from "./handlers/auction.handler.js";
 import { registerBiddingHandlers } from "./handlers/bidding.handler.js";
 import { registerResolutionHandlers } from "./handlers/resolution.handler.js";
+import { restoreAuctionTimers } from "./handlers/resolution.handler.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server(httpServer, {
@@ -21,6 +22,10 @@ export function createSocketServer(httpServer: HttpServer) {
     registerAuctionHandlers(io, socket);
     registerBiddingHandlers(io, socket);
     registerResolutionHandlers(io, socket);
+  });
+
+  void restoreAuctionTimers(io).catch((error: unknown) => {
+    console.error("Unable to restore auction timers:", error);
   });
 
   return io;
