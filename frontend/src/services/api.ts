@@ -144,3 +144,24 @@ export async function getAuctionItems(code: string): Promise<AuctionItem[]> {
   return response.json();
 }
 
+export interface Bid {
+  _id: string;
+  roomId: string;
+  itemId: string;
+  participantId: string;
+  username: string;
+  amount: number;
+  createdAt: string;
+}
+
+export async function getRoomResults(code: string): Promise<AuctionItem[]> {
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/results`);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error ?? "Failed to fetch auction results.");
+  }
+
+  return response.json();
+}
+

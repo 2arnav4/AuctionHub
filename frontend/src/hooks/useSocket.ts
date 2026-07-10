@@ -5,6 +5,7 @@ import {
   type Participant,
   type Room,
   type AuctionItem,
+  type Bid,
   getAuctionItems,
 } from "../services/api";
 
@@ -12,7 +13,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 /**
  * Custom React hook to manage Socket.IO lifecycle, event listeners,
- * and state updates for realtime lobby presence, items, and active item management.
+ * and state updates for realtime lobby presence, items, live bidding, and resolutions.
  */
 export function useSocket(roomCode: string) {
   const { sessionToken } = useSessionStore();
@@ -22,6 +23,8 @@ export function useSocket(roomCode: string) {
   const [items, setItems] = useState<AuctionItem[]>([]);
   const [activeItem, setActiveItem] = useState<AuctionItem | null>(null);
   const [activeItemStartedAt, setActiveItemStartedAt] = useState<string | null>(null);
+  const [bids, setBids] = useState<Bid[]>([]);
+  const [bidError, setBidError] = useState<{ reason: string; minimumBid: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,11 +69,15 @@ export function useSocket(roomCode: string) {
       room: Room;
       participants: Participant[];
       activeItem: AuctionItem | null;
+      bids?: Bid[];
     }) => {
       setRoom(data.room);
       setParticipants(data.participants);
       if (data.activeItem) {
         setActiveItem(data.activeItem);
+      }
+      if (data.bids) {
+        setBids(data.bids);
       }
     };
 
@@ -112,6 +119,31 @@ export function useSocket(roomCode: string) {
     const handleItemActivated = (data: { item: AuctionItem; startedAt: string }) => {
       setActiveItem(data.item);
       setActiveItemStartedAt(data.startedAt);
+      setBids([]); // Reset bids timeline for new active item
+      setBidError(null);
+    };
+
+    const handleBidAccepted = (data: { bid: Bid; item: AuctionItem }) => {
+      setActiveItem(data.item);
+      setBids((prev) => {
+        const exists = prev.some((b) => b._id === data.bid._id);
+        if (exists) return prev;
+        return [data.bid, ...prev]; // Prepend newest bid to the history
+      });
+      setBidError(null);
+    };
+
+    const handleBidRejected = (data: { reason: string; minimumBid: number }) => {
+      setBidError({ reason: data.reason, minimumBid: data.minimumBid });
+    };
+
+    const handleItemEnded = (data: { item: AuctionItem; resolution: "sold" | "unsold" }) => {
+      setBids([]); // Clear local bids log on item resolution
+      setBidError(null);
+    };
+
+    const handleAuctionCompleted = (data: { room: Room }) => {
+      setRoom(data.room);
     };
 
     // Bind event listeners
@@ -124,6 +156,10 @@ export function useSocket(roomCode: string) {
     socket.on("item:added", handleItemAdded);
     socket.on("auction:started", handleAuctionStarted);
     socket.on("item:activated", handleItemActivated);
+    socket.on("bid:accepted", handleBidAccepted);
+    socket.on("bid:rejected", handleBidRejected);
+    socket.on("item:ended", handleItemEnded);
+    socket.on("auction:completed", handleAuctionCompleted);
 
     // If socket is already connected when this hook mounts, trigger connect handler
     if (socket.connected) {
@@ -141,6 +177,10 @@ export function useSocket(roomCode: string) {
       socket.off("item:added", handleItemAdded);
       socket.off("auction:started", handleAuctionStarted);
       socket.off("item:activated", handleItemActivated);
+      socket.off("bid:accepted", handleBidAccepted);
+      socket.off("bid:rejected", handleBidRejected);
+      socket.off("item:ended", handleItemEnded);
+      socket.off("auction:completed", handleAuctionCompleted);
       disconnectSocket();
     };
   }, [roomCode, sessionToken]);
@@ -152,7 +192,12 @@ export function useSocket(roomCode: string) {
     items,
     setItems,
     activeItem,
+    setActiveItem,
     activeItemStartedAt,
+    bids,
+    setBids,
+    bidError,
+    setBidError,
     error,
   };
 }
