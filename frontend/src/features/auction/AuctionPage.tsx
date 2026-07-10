@@ -69,7 +69,8 @@ export function AuctionPage() {
     if (!activeItem) return;
 
     const bidAmount = Number(bidVal);
-    const minBidRequired = activeItem.currentBid + 1;
+    const currentPrice = activeItem.currentBid ?? activeItem.startingBid ?? 0;
+    const minBidRequired = currentPrice + 1;
 
     if (isNaN(bidAmount) || bidAmount < minBidRequired) {
       setLocalBidErr(`Bid must be at least ₹${minBidRequired.toLocaleString()}`);
@@ -163,7 +164,7 @@ export function AuctionPage() {
   }
 
   const isAdmin = sessionRole === "admin";
-  const minBidVal = activeItem ? activeItem.currentBid + 1 : 1;
+  const minBidVal = activeItem ? (activeItem.currentBid ?? activeItem.startingBid ?? 0) + 1 : 1;
 
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16 max-w-5xl">
@@ -222,7 +223,7 @@ export function AuctionPage() {
                 variant="primary"
                 className="flex-1 sm:flex-initial bg-green-500 hover:bg-green-600 border-green-500/20 text-zinc-950 font-bold text-xs"
               >
-                Sell Item (₹{activeItem.currentBid.toLocaleString()})
+                Sell Item (₹{(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString()})
               </Button>
               <Button
                 onClick={handleMarkUnsold}
@@ -287,7 +288,7 @@ export function AuctionPage() {
                         Starting Price
                       </span>
                       <span className="text-xl font-bold text-text-primary tracking-tight">
-                        ₹{activeItem.startingBid.toLocaleString()}
+                        ₹{(activeItem.startingBid ?? 0).toLocaleString()}
                       </span>
                     </div>
                     <div className="border-l border-border/40 pl-4">
@@ -295,7 +296,7 @@ export function AuctionPage() {
                         Highest Bid
                       </span>
                       <span className="text-xl font-bold text-accent tracking-tight">
-                        ₹{activeItem.currentBid.toLocaleString()}
+                        ₹{(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString()}
                       </span>
                       {activeItem.highestBidderUsername ? (
                         <span className="text-[10px] font-medium text-green-400 block mt-0.5 truncate">
@@ -335,7 +336,7 @@ export function AuctionPage() {
                         type="number"
                         required
                         min={minBidVal}
-                        placeholder={`Min bid required: ₹${minBidVal.toLocaleString()}`}
+                        placeholder={`Min bid required: ₹${(minBidVal ?? 1).toLocaleString()}`}
                         value={bidVal}
                         onChange={(e) => {
                           setBidVal(e.target.value);
@@ -437,12 +438,12 @@ export function AuctionPage() {
               <div className="h-20 overflow-y-auto space-y-1.5 text-[10px] text-text-muted flex flex-col justify-end">
                 {activeItem && (
                   <p className="text-text-secondary font-medium">
-                    ✦ Item <span className="text-accent">{activeItem.name}</span> is active. Minimum bid: ₹{minBidVal.toLocaleString()}.
+                    ✦ Item <span className="text-accent">{activeItem.name}</span> is active. Minimum bid: ₹{(minBidVal ?? 1).toLocaleString()}.
                   </p>
                 )}
                 {bids.length > 0 && (
                   <p className="text-green-400">
-                    ✔ Bid of ₹{bids[0].amount.toLocaleString()} accepted for {bids[0].username}.
+                    ✔ Bid of ₹{(bids[0].amount ?? 0).toLocaleString()} accepted for {bids[0].username}.
                   </p>
                 )}
               </div>

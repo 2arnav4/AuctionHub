@@ -211,9 +211,9 @@ export function ResultsPage() {
                       </td>
                       <td className="px-6 py-4 text-right font-bold text-text-primary">
                         {item.status === "sold" ? (
-                          <span className="text-accent">₹{item.currentBid.toLocaleString()}</span>
+                          <span className="text-accent">₹{(item.currentBid ?? item.startingBid ?? 0).toLocaleString()}</span>
                         ) : (
-                          <span className="text-text-muted font-normal">₹{item.startingBid.toLocaleString()}</span>
+                          <span className="text-text-muted font-normal">₹{(item.startingBid ?? 0).toLocaleString()}</span>
                         )}
                       </td>
                     </tr>

@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io";
 import { Participant } from "../../models/participant.model.js";
 import { AuctionItem } from "../../models/item.model.js";
 import { Bid } from "../../models/bid.model.js";
+import { Room } from "../../models/room.model.js";
 
 /**
  * Registers Room-related event listeners for a given Socket instance.
@@ -11,10 +12,17 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
   socket.on("room:connect", async () => {
     try {
       const participant = socket.data.participant;
-      const room = socket.data.room;
+      const cachedRoom = socket.data.room;
 
-      if (!participant || !room) {
+      if (!participant || !cachedRoom) {
         socket.emit("error", { message: "Not authenticated for any room." });
+        return;
+      }
+
+      // Fetch fresh room status and currentItemId from database
+      const room = await Room.findById(cachedRoom._id);
+      if (!room) {
+        socket.emit("error", { message: "Room not found." });
         return;
       }
 
