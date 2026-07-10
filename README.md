@@ -6,6 +6,9 @@ A full-stack, server-authoritative auction application (Assignment Option 3). Ho
 
 [auction-assignment.vercel.app](https://auction-assignment.vercel.app/)
 
+> [!NOTE]
+> The backend server is hosted on Render (free tier), so the initial load may take 1-2 minutes to spin up the container if it has gone to sleep.
+
 > Before submitting, confirm the backend host is awake and reachable from the deployed frontend (see [Known Limitations](#known-limitations) — free-tier hosts can cold-sleep).
 
 ## Demo Credentials
