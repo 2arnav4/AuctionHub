@@ -24,12 +24,31 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
 }
 
+function validatePassword(password: string): string | null {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter.";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter.";
+  }
+  if (!/[0-9]/.test(password)) {
+    return "Password must contain at least one digit.";
+  }
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    return "Password must contain at least one special character (e.g., !, @, #, $, etc.).";
+  }
+  return null;
+}
+
 /**
  * Validates credentials and sets HTTP-only JWT cookie.
  * Supports demo accounts:
  * - Host: admin / password123
  * - Bidder: demo / password123
- * Also supports registered users (validating password) and guest write-in log-ins (no password validation required).
+ * Also supports registered users (validating password). Guest logins are not supported.
  */
 export async function loginHandler(
   req: Request,
@@ -64,20 +83,18 @@ export async function loginHandler(
     } else {
       // Check if user exists in the registered users DB
       const user = await User.findOne({ usernameNormalized: normalizedUsername });
-      if (user) {
-        if (!password) {
-          throw new AppError("Password is required for this registered account.", 400);
-        }
-        const checkHash = hashPassword(password, user.salt);
-        if (checkHash !== user.passwordHash) {
-          throw new AppError("Invalid password.", 401);
-        }
-        finalUsername = user.username;
-        role = "participant";
-      } else {
-        // If not registered, allow guest write-in log-ins (no password validation required)
-        role = "participant";
+      if (!user) {
+        throw new AppError("Account not found. Please sign up first.", 404);
       }
+      if (!password) {
+        throw new AppError("Password is required.", 400);
+      }
+      const checkHash = hashPassword(password, user.salt);
+      if (checkHash !== user.passwordHash) {
+        throw new AppError("Invalid username or password.", 401);
+      }
+      finalUsername = user.username;
+      role = "participant";
     }
 
     // Sign JWT Token
@@ -123,6 +140,12 @@ export async function registerHandler(
     // Prevent registering with reserved names
     if (normalizedUsername === "admin" || normalizedUsername.startsWith("demo")) {
       throw new AppError("Username is reserved and cannot be registered.", 400);
+    }
+
+    // Validate password strength
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      throw new AppError(passwordError, 400);
     }
 
     // Check if user already exists
