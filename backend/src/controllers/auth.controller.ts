@@ -6,7 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "mini-auction-room-jwt-secret-key-1
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: false, // Set to true in production if HTTPS is active
+  secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
 };
