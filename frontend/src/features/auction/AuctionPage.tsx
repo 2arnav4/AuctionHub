@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Clock,
@@ -15,6 +15,12 @@ import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSocket } from "../../hooks/useSocket";
 import { getSocket } from "../../services/socket";
+
+interface ToastMsg {
+  id: string;
+  message: string;
+  type: "info" | "success" | "error";
+}
 
 export function AuctionPage() {
   const { code } = useParams<{ code: string }>();
@@ -41,6 +47,75 @@ export function AuctionPage() {
 
   const [bidVal, setBidVal] = useState("");
   const [localBidErr, setLocalBidErr] = useState<string | null>(null);
+  
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const [activityLogs, setActivityLogs] = useState<string[]>([]);
+
+  const addToast = useCallback((message: string, type: "info" | "success" | "error" = "info") => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const minBidVal = activeItem ? (activeItem.currentBid ?? activeItem.startingBid ?? 0) + 1 : 1;
+
+  // Listen to live events for broadcast logs and toast notifications
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleItemEnded = (data: { item: any; resolution: "sold" | "unsold" }) => {
+      const username = data.item.highestBidderUsername || "none";
+      const price = data.item.currentBid || data.item.startingBid;
+      const formattedMsg = data.resolution === "sold"
+        ? `${data.item.name} sold to ${username} for ₹${price.toLocaleString()}`
+        : `${data.item.name} marked unsold`;
+
+      setActivityLogs((prev) => [...prev, `✦ ${formattedMsg}`]);
+      addToast(formattedMsg, "info");
+    };
+
+    const handleItemActivated = (data: { item: any }) => {
+      const msg = `Item ${data.item.name} is active. Minimum bid: ₹${(data.item.currentBid || data.item.startingBid).toLocaleString()}`;
+      setActivityLogs((prev) => [...prev, `✦ ${msg}`]);
+      addToast(`New item active: ${data.item.name}`, "info");
+    };
+
+    const handleBidAccepted = (data: { bid: any }) => {
+      const msg = `Bid of ₹${data.bid.amount.toLocaleString()} accepted for ${data.bid.username}`;
+      setActivityLogs((prev) => [...prev, `✔ ${msg}.`]);
+      addToast(`New bid: ₹${data.bid.amount.toLocaleString()} by ${data.bid.username}`, "success");
+    };
+
+    const handleBidRejected = (data: { reason: string; minimumBid: number }) => {
+      addToast(data.reason, "error");
+    };
+
+    socket.on("item:ended", handleItemEnded);
+    socket.on("item:activated", handleItemActivated);
+    socket.on("bid:accepted", handleBidAccepted);
+    socket.on("bid:rejected", handleBidRejected);
+
+    return () => {
+      socket.off("item:ended", handleItemEnded);
+      socket.off("item:activated", handleItemActivated);
+      socket.off("bid:accepted", handleBidAccepted);
+      socket.off("bid:rejected", handleBidRejected);
+    };
+  }, [addToast]);
+
+  // Initial log entry on item load
+  useEffect(() => {
+    if (activeItem) {
+      const msg = `✦ Item ${activeItem.name} is active. Minimum bid: ₹${minBidVal.toLocaleString()}.`;
+      setActivityLogs((prev) => {
+        if (prev.includes(msg)) return prev;
+        return [...prev, msg];
+      });
+    }
+  }, [activeItem?._id, minBidVal]);
 
   // Security check: Redirect if the user has no session or is in the wrong room
   const hasNoAccess = !sessionUsername || !sessionRole || sessionRoomCode !== code;
@@ -164,7 +239,6 @@ export function AuctionPage() {
   }
 
   const isAdmin = sessionRole === "admin";
-  const minBidVal = activeItem ? (activeItem.currentBid ?? activeItem.startingBid ?? 0) + 1 : 1;
 
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16 max-w-5xl">
@@ -435,22 +509,45 @@ export function AuctionPage() {
                 Live Broadcasts
               </span>
 
-              <div className="h-20 overflow-y-auto space-y-1.5 text-[10px] text-text-muted flex flex-col justify-end">
-                {activeItem && (
-                  <p className="text-text-secondary font-medium">
-                    ✦ Item <span className="text-accent">{activeItem.name}</span> is active. Minimum bid: ₹{(minBidVal ?? 1).toLocaleString()}.
-                  </p>
-                )}
-                {bids.length > 0 && (
-                  <p className="text-green-400">
-                    ✔ Bid of ₹{(bids[0].amount ?? 0).toLocaleString()} accepted for {bids[0].username}.
-                  </p>
+              <div className="h-32 overflow-y-auto space-y-2 text-[10px] text-text-muted pr-1">
+                {activityLogs.length === 0 ? (
+                  <p className="text-text-muted italic">Waiting for room activity...</p>
+                ) : (
+                  activityLogs.map((log, index) => {
+                    const isSuccess = log.includes("✔");
+                    return (
+                      <p
+                        key={index}
+                        className={isSuccess ? "text-green-400" : "text-text-secondary font-medium"}
+                      >
+                        {log}
+                      </p>
+                    );
+                  })
                 )}
               </div>
             </div>
 
           </div>
         </div>
+      </div>
+
+      {/* Floating Toast Notification Container */}
+      <div className="fixed top-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto p-4 rounded-xl border bg-zinc-950/90 backdrop-blur-md shadow-2xl flex items-center gap-3 transition-all transform duration-300 ${
+              toast.type === "error"
+                ? "border-red-500/30 text-red-400"
+                : toast.type === "success"
+                ? "border-green-500/30 text-green-400"
+                : "border-border text-text-primary"
+            }`}
+          >
+            <span className="text-xs font-semibold">{toast.message}</span>
+          </div>
+        ))}
       </div>
     </PageContainer>
   );

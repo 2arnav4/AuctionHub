@@ -1,17 +1,19 @@
 import type { Request, Response, NextFunction } from "express";
 import * as roomService from "../services/room.service.js";
+import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 
 /**
  * Handles room creation requests.
  * POST /api/rooms
  */
 export async function createRoomHandler(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const { username, roomName } = req.body;
+    const { roomName } = req.body;
+    const username = req.user?.username || req.body.username;
     const result = await roomService.createRoom(username, roomName);
     res.status(201).json(result);
   } catch (error) {
@@ -24,13 +26,13 @@ export async function createRoomHandler(
  * POST /api/rooms/:code/join
  */
 export async function joinRoomHandler(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const code = req.params.code as string;
-    const { username } = req.body;
+    const username = req.user?.username || req.body.username;
     const result = await roomService.joinRoom(code, username);
     res.status(200).json(result);
   } catch (error) {

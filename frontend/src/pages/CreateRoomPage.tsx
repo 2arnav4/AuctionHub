@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Plus, AlertCircle } from "lucide-react";
 import { BackButton } from "../components/ui/BackButton";
@@ -10,12 +10,21 @@ import { useSessionStore } from "../stores/useSessionStore";
 
 export function CreateRoomPage() {
   const navigate = useNavigate();
+  const authUser = useSessionStore((state) => state.authUser);
   const setSession = useSessionStore((state) => state.setSession);
 
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(authUser?.username || "");
   const [roomName, setRoomName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authUser) {
+      navigate("/");
+    } else {
+      setUsername(authUser.username);
+    }
+  }, [authUser, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,12 +85,12 @@ export function CreateRoomPage() {
               id="username"
               type="text"
               required
+              readOnly
               placeholder="e.g. Alice"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-all outline-none"
-              disabled={loading}
+              className="w-full bg-surface-overlay border border-border/60 text-text-muted rounded-lg px-4 py-2.5 text-sm cursor-not-allowed outline-none select-none"
             />
+            <p className="text-[10px] text-text-muted">Authenticated user profile. Log out from the navbar header to change accounts.</p>
           </div>
 
           <div className="space-y-2">

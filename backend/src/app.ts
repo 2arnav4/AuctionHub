@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import cookieParser from "cookie-parser";
 import { corsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
@@ -10,6 +11,7 @@ export function createApp() {
 
   app.use(cors(corsOptions));
   app.use(express.json());
+  app.use(cookieParser());
 
   app.use("/health", healthRouter);
   app.use("/api", apiRouter);

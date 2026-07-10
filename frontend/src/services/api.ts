@@ -37,8 +37,15 @@ export interface JoinResponse {
   sessionToken: string;
 }
 
+export interface AuthResponse {
+  username: string;
+  role: "admin" | "participant";
+}
+
 export async function healthCheck(): Promise<{ status: string }> {
-  const response = await fetch(`${SERVER_ROOT_URL}/health`);
+  const response = await fetch(`${SERVER_ROOT_URL}/health`, {
+    credentials: "include",
+  });
 
   if (!response.ok) {
     throw new Error("Health check failed");
@@ -46,6 +53,59 @@ export async function healthCheck(): Promise<{ status: string }> {
 
   return response.json();
 }
+
+/**
+ * Authentication Endpoints
+ */
+
+export async function login(username: string, password?: string): Promise<AuthResponse> {
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ username, password }),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error ?? "Failed to log in.");
+  }
+
+  return response.json();
+}
+
+export async function logout(): Promise<{ message: string }> {
+  const response = await fetch(`${API_URL}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error ?? "Failed to log out.");
+  }
+
+  return response.json();
+}
+
+export async function checkAuth(): Promise<{ user: AuthResponse | null }> {
+  const response = await fetch(`${API_URL}/auth/me`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    return { user: null };
+  }
+
+  return response.json();
+}
+
+/**
+ * Room Endpoints
+ */
 
 export async function createRoom(
   username: string,
@@ -57,6 +117,7 @@ export async function createRoom(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ username, roomName }),
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -77,6 +138,7 @@ export async function joinRoom(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ username }),
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -88,7 +150,9 @@ export async function joinRoom(
 }
 
 export async function getRoom(code: string): Promise<Room> {
-  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}`);
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}`, {
+    credentials: "include",
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -126,6 +190,7 @@ export async function addAuctionItem(
       "x-session-token": sessionToken,
     },
     body: JSON.stringify({ name, description, startingBid }),
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -137,7 +202,9 @@ export async function addAuctionItem(
 }
 
 export async function getAuctionItems(code: string): Promise<AuctionItem[]> {
-  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`);
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`, {
+    credentials: "include",
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -158,7 +225,9 @@ export interface Bid {
 }
 
 export async function getRoomResults(code: string): Promise<AuctionItem[]> {
-  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/results`);
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/results`, {
+    credentials: "include",
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -167,4 +236,3 @@ export async function getRoomResults(code: string): Promise<AuctionItem[]> {
 
   return response.json();
 }
-

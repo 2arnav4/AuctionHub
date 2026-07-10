@@ -1,6 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import { AuctionItem } from "../../models/item.model.js";
 import { Bid } from "../../models/bid.model.js";
+import { Room } from "../../models/room.model.js";
 
 /**
  * Registers Bidding-related event listeners for a given Socket instance.
@@ -10,11 +11,21 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
   socket.on("bid:place", async (data: { amount: number }) => {
     try {
       const participant = socket.data.participant;
-      const room = socket.data.room;
+      const cachedRoom = socket.data.room;
 
-      if (!participant || !room) {
+      if (!participant || !cachedRoom) {
         socket.emit("bid:rejected", {
           reason: "Not authenticated for any room.",
+          minimumBid: 1,
+        });
+        return;
+      }
+
+      // Query database to fetch fresh status and currentItemId
+      const room = await Room.findById(cachedRoom._id);
+      if (!room) {
+        socket.emit("bid:rejected", {
+          reason: "Room not found.",
           minimumBid: 1,
         });
         return;

@@ -60,10 +60,17 @@ export function registerResolutionHandlers(io: Server, socket: Socket): void {
   socket.on("item:sell", async () => {
     try {
       const participant = socket.data.participant;
-      const room = socket.data.room;
+      const cachedRoom = socket.data.room;
 
-      if (!participant || !room) {
+      if (!participant || !cachedRoom) {
         socket.emit("error", { message: "Not authenticated for any room." });
+        return;
+      }
+
+      // Fetch fresh room details from database
+      const room = await Room.findById(cachedRoom._id);
+      if (!room) {
+        socket.emit("error", { message: "Room not found." });
         return;
       }
 
@@ -101,7 +108,7 @@ export function registerResolutionHandlers(io: Server, socket: Socket): void {
       console.log(`Host sold item ${activeItem.name} for ₹${activeItem.currentBid} to user ${activeItem.highestBidderUsername || "none"}`);
 
       // 5. Progress to next item or end auction
-      await progressAuction(io, roomCode, room._id);
+      await progressAuction(io, roomCode, room._id.toString());
     } catch (error) {
       console.error("Error in item:sell handler:", error);
       socket.emit("error", { message: "Internal server error resolving item." });
@@ -112,10 +119,17 @@ export function registerResolutionHandlers(io: Server, socket: Socket): void {
   socket.on("item:unsold", async () => {
     try {
       const participant = socket.data.participant;
-      const room = socket.data.room;
+      const cachedRoom = socket.data.room;
 
-      if (!participant || !room) {
+      if (!participant || !cachedRoom) {
         socket.emit("error", { message: "Not authenticated for any room." });
+        return;
+      }
+
+      // Fetch fresh room details from database
+      const room = await Room.findById(cachedRoom._id);
+      if (!room) {
+        socket.emit("error", { message: "Room not found." });
         return;
       }
 
@@ -156,7 +170,7 @@ export function registerResolutionHandlers(io: Server, socket: Socket): void {
       console.log(`Host marked item ${activeItem.name} as UNSOLD`);
 
       // 5. Progress to next item or end auction
-      await progressAuction(io, roomCode, room._id);
+      await progressAuction(io, roomCode, room._id.toString());
     } catch (error) {
       console.error("Error in item:unsold handler:", error);
       socket.emit("error", { message: "Internal server error resolving item." });
