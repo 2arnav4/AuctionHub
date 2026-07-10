@@ -8,11 +8,30 @@ import { getErrorMessage } from "../../utils/error";
 export function AuthPortal() {
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
 
-  const [activeTab, setActiveTab] = useState<"guest" | "signin" | "signup">("guest");
+  const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const validateClientPassword = (pass: string): string | null => {
+    if (pass.length < 8) {
+      return "Password must be at least 8 characters long.";
+    }
+    if (!/[A-Z]/.test(pass)) {
+      return "Password must contain at least one uppercase letter.";
+    }
+    if (!/[a-z]/.test(pass)) {
+      return "Password must contain at least one lowercase letter.";
+    }
+    if (!/[0-9]/.test(pass)) {
+      return "Password must contain at least one digit.";
+    }
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pass)) {
+      return "Password must contain at least one special character (e.g. !, @, #, $, etc.).";
+    }
+    return null;
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent | null, customUser?: string, customPass?: string) => {
     if (e) e.preventDefault();
@@ -25,9 +44,18 @@ export function AuthPortal() {
       return;
     }
 
-    if (!customUser && activeTab !== "guest" && !targetPass) {
+    if (!customUser && !targetPass) {
       setError("Please specify a password.");
       return;
+    }
+
+    // Client-side password validation on Sign Up
+    if (!customUser && activeTab === "signup") {
+      const passwordErr = validateClientPassword(targetPass);
+      if (passwordErr) {
+        setError(passwordErr);
+        return;
+      }
     }
 
     setLoading(true);
@@ -65,7 +93,7 @@ export function AuthPortal() {
           <div className="border-b border-border/40 pb-4 text-center">
             <h2 className="text-lg font-bold text-text-primary tracking-tight">Onboard Session Log-in</h2>
             <p className="text-xs text-text-secondary mt-1">
-              Select a preconfigured demo account or enter a custom guest alias to log in.
+              Select a preconfigured demo account or enter a custom account to sign in/up.
             </p>
           </div>
 
@@ -97,21 +125,6 @@ export function AuthPortal() {
 
           {/* Selection Tabs */}
           <div className="flex border-b border-border/40">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("guest");
-                setError(null);
-              }}
-              disabled={loading}
-              className={`flex-1 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-center transition-all border-b-2 cursor-pointer ${
-                activeTab === "guest"
-                  ? "border-accent text-accent"
-                  : "border-transparent text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              Guest Access
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -159,33 +172,43 @@ export function AuthPortal() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder={activeTab === "guest" ? "e.g. GuestBidder" : "e.g. Alice"}
+                placeholder="e.g. Alice"
                 disabled={loading}
                 className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
               />
             </div>
 
-            {/* Password input shown only for Sign In, Sign Up, or when typing reserved usernames */}
-            {(activeTab !== "guest" || ["admin", "demo"].includes(username.toLowerCase().trim())) && (
-              <div className="space-y-1.5 animate-fade-in">
-                <label
-                  htmlFor="auth-password"
-                  className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-1"
-                >
-                  <Lock className="h-3 w-3 text-text-muted" />
-                  Password
-                </label>
-                <input
-                  id="auth-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="password123"
-                  disabled={loading}
-                  className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
-                />
-              </div>
-            )}
+            <div className="space-y-1.5 animate-fade-in">
+              <label
+                htmlFor="auth-password"
+                className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-1"
+              >
+                <Lock className="h-3 w-3 text-text-muted" />
+                Password
+              </label>
+              <input
+                id="auth-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="password123"
+                disabled={loading}
+                className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
+              />
+
+              {activeTab === "signup" && password && (
+                <div className="text-[10px] space-y-1 mt-2 p-2 rounded bg-surface-overlay/50 border border-border/20">
+                  <p className="font-semibold text-text-secondary">Password Requirements:</p>
+                  <ul className="list-disc pl-3.5 space-y-0.5 text-text-muted">
+                    <li className={password.length >= 8 ? "text-green-400" : ""}>At least 8 characters</li>
+                    <li className={/[A-Z]/.test(password) ? "text-green-400" : ""}>At least one uppercase letter (A-Z)</li>
+                    <li className={/[a-z]/.test(password) ? "text-green-400" : ""}>At least one lowercase letter (a-z)</li>
+                    <li className={/[0-9]/.test(password) ? "text-green-400" : ""}>At least one number (0-9)</li>
+                    <li className={/[!@#$%^&*(),.?":{}|<>]/.test(password) ? "text-green-400" : ""}>At least one special character</li>
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
 
           <Button
@@ -202,7 +225,7 @@ export function AuthPortal() {
             ) : (
               <>
                 <LogIn className="h-4 w-4" />
-                {loading ? "Authenticating..." : activeTab === "guest" ? "Log In as Guest" : "Sign In"}
+                {loading ? "Authenticating..." : "Sign In"}
               </>
             )}
           </Button>
