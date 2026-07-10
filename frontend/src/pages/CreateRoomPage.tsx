@@ -1,16 +1,128 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, Plus, AlertCircle } from "lucide-react";
 import { BackButton } from "../components/ui/BackButton";
 import { PageContainer } from "../components/ui/PageContainer";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Button } from "../components/ui/Button";
+import { createRoom } from "../services/api";
+import { useSessionStore } from "../stores/useSessionStore";
 
 export function CreateRoomPage() {
+  const navigate = useNavigate();
+  const setSession = useSessionStore((state) => state.setSession);
+
+  const [username, setUsername] = useState("");
+  const [roomName, setRoomName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim() || !roomName.trim()) {
+      setError("Both username and room name are required.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await createRoom(username.trim(), roomName.trim());
+      setSession({
+        roomCode: data.room.code,
+        sessionToken: data.sessionToken,
+        username: data.participant.username,
+        participantId: data.participant._id,
+        role: data.participant.role,
+      });
+      navigate(`/lobby/${data.room.code}`);
+    } catch (err: any) {
+      setError(err.message ?? "Something went wrong while creating the room.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16">
       <PageHeader
         title="Create Auction Room"
-        description="Set up your auction room, add items, and share the room code with participants. Form and logic coming in the next milestone."
+        description="Set up your auction room, invite bidders, and start a live bidding session."
       >
         <BackButton />
       </PageHeader>
+
+      <div className="mx-auto max-w-md w-full mt-8">
+        <form
+          onSubmit={handleSubmit}
+          className="border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 shadow-xl"
+        >
+          {error && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/10 p-3.5 text-sm text-red-400">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p>{error}</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="username"
+              className="text-xs font-semibold uppercase tracking-wider text-text-secondary"
+            >
+              Your Username
+            </label>
+            <input
+              id="username"
+              type="text"
+              required
+              placeholder="e.g. Alice"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-all outline-none"
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="roomName"
+              className="text-xs font-semibold uppercase tracking-wider text-text-secondary"
+            >
+              Room Name
+            </label>
+            <input
+              id="roomName"
+              type="text"
+              required
+              placeholder="e.g. Rare Art & Collectibles"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-all outline-none"
+              disabled={loading}
+            />
+          </div>
+
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2"
+            variant="primary"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Creating Room...
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                Create Room
+              </>
+            )}
+          </Button>
+        </form>
+      </div>
     </PageContainer>
   );
 }
