@@ -1,6 +1,6 @@
 import type { Socket } from "socket.io";
-import { Participant } from "../../models/participant.model.js";
-import { Room } from "../../models/room.model.js";
+import { Participant } from "../../models/participantModel.js";
+import { Room } from "../../models/roomModel.js";
 
 /**
  * Middleware to authenticate and authorize a Socket.IO connection.

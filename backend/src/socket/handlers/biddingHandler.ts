@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
-import { AuctionItem } from "../../models/item.model.js";
-import { Bid } from "../../models/bid.model.js";
-import { Room } from "../../models/room.model.js";
+import { AuctionItem } from "../../models/itemModel.js";
+import { Bid } from "../../models/bidModel.js";
+import { Room } from "../../models/roomModel.js";
 import { isValidPositiveAmount } from "../../utils/auction.js";
 
 /**

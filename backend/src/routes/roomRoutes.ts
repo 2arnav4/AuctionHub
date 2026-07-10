@@ -4,8 +4,8 @@ import {
   joinRoomHandler,
   getRoomHandler,
   getRoomResultsHandler,
-} from "../controllers/room.controller.js";
-import { optionalAuth } from "../middleware/auth.middleware.js";
+} from "../controllers/roomController.js";
+import { optionalAuth } from "../middleware/authMiddleware.js";
 
 export const roomRouter = Router();
 

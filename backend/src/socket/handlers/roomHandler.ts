@@ -1,8 +1,8 @@
 import type { Server, Socket } from "socket.io";
-import { Participant } from "../../models/participant.model.js";
-import { AuctionItem } from "../../models/item.model.js";
-import { Bid, type IBid } from "../../models/bid.model.js";
-import { Room } from "../../models/room.model.js";
+import { Participant } from "../../models/participantModel.js";
+import { AuctionItem } from "../../models/itemModel.js";
+import { Bid, type IBid } from "../../models/bidModel.js";
+import { Room } from "../../models/roomModel.js";
 
 const participantSockets = new Map<string, Set<string>>();
 

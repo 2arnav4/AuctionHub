@@ -1,4 +1,4 @@
-import { Room } from "../models/room.model.js";
+import { Room } from "../models/roomModel.js";
 
 /**
  * Generates a random 6-character uppercase alphanumeric room code.

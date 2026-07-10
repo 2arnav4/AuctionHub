@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import { env } from "../../config/env.js";
-import { Room } from "../../models/room.model.js";
-import { AuctionItem, type IAuctionItem } from "../../models/item.model.js";
+import { Room } from "../../models/roomModel.js";
+import { AuctionItem, type IAuctionItem } from "../../models/itemModel.js";
 import { getAuctionEndsAt, getExpiryResolution } from "../../utils/auction.js";
 
 type Resolution = "sold" | "unsold";

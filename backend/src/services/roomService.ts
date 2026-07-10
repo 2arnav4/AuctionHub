@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { Room } from "../models/room.model.js";
-import { Participant } from "../models/participant.model.js";
-import { AuctionItem } from "../models/item.model.js";
+import { Room } from "../models/roomModel.js";
+import { Participant } from "../models/participantModel.js";
+import { AuctionItem } from "../models/itemModel.js";
 import { generateUniqueRoomCode } from "../utils/codeGenerator.js";
 import { AppError } from "../middleware/errorHandler.js";
 

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "./env.js";
-import { Participant } from "../models/participant.model.js";
+import { Participant } from "../models/participantModel.js";
 
 async function migrateParticipantUsernameKeys(): Promise<void> {
   await Participant.collection.updateMany(

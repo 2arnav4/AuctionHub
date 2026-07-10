@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { AppError } from "../middleware/errorHandler.js";
 import { env } from "../config/env.js";
-import { User } from "../models/user.model.js";
+import { User } from "../models/userModel.js";
 
 const isProd = env.nodeEnv === "production";
 

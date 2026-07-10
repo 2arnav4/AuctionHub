@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import { corsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { apiRouter } from "./routes/index.js";
-import { healthRouter } from "./routes/health.routes.js";
+import { healthRouter } from "./routes/healthRoutes.js";
 
 export function createApp() {
   const app = express();

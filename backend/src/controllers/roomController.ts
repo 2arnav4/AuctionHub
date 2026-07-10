@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import * as roomService from "../services/room.service.js";
-import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import * as roomService from "../services/roomService.js";
+import type { AuthenticatedRequest } from "../middleware/authMiddleware.js";
 
 /**
  * Handles room creation requests.

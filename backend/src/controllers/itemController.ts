@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import * as itemService from "../services/item.service.js";
-import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import * as itemService from "../services/itemService.js";
+import type { AuthenticatedRequest } from "../middleware/authMiddleware.js";
 
 /**
  * Handles registering a new auction item.

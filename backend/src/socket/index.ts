@@ -2,11 +2,11 @@ import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import { corsOptions } from "../config/cors.js";
 import { socketAuthMiddleware } from "./middleware/auth.js";
-import { registerRoomHandlers } from "./handlers/room.handler.js";
-import { registerAuctionHandlers } from "./handlers/auction.handler.js";
-import { registerBiddingHandlers } from "./handlers/bidding.handler.js";
-import { registerResolutionHandlers } from "./handlers/resolution.handler.js";
-import { restoreAuctionTimers } from "./handlers/resolution.handler.js";
+import { registerRoomHandlers } from "./handlers/roomHandler.js";
+import { registerAuctionHandlers } from "./handlers/auctionHandler.js";
+import { registerBiddingHandlers } from "./handlers/biddingHandler.js";
+import { registerResolutionHandlers } from "./handlers/resolutionHandler.js";
+import { restoreAuctionTimers } from "./handlers/resolutionHandler.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server(httpServer, {

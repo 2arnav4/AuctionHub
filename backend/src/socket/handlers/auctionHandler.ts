@@ -1,8 +1,8 @@
 import type { Server, Socket } from "socket.io";
-import { Room } from "../../models/room.model.js";
-import { AuctionItem } from "../../models/item.model.js";
+import { Room } from "../../models/roomModel.js";
+import { AuctionItem } from "../../models/itemModel.js";
 import { env } from "../../config/env.js";
-import { scheduleAuctionTimer } from "./resolution.handler.js";
+import { scheduleAuctionTimer } from "./resolutionHandler.js";
 import { getAuctionEndsAt } from "../../utils/auction.js";
 
 /**

@@ -4,7 +4,7 @@ import {
   logoutHandler,
   meHandler,
   registerHandler,
-} from "../controllers/auth.controller.js";
+} from "../controllers/authController.js";
 
 export const authRouter = Router();
 
