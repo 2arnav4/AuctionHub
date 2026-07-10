@@ -52,7 +52,7 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         participant: cleanParticipant,
       });
 
-      console.log(`Socket ${socket.id} (user: ${participant.username}) connected to room ${roomCode}`);
+      console.log(`User ${participant.username} connected to auction room ${roomCode}`);
     } catch (error) {
       console.error("Error in room:connect handler:", error);
       socket.emit("error", { message: "Internal server error during room connect." });
@@ -88,7 +88,7 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         participant: cleanParticipant,
       });
 
-      console.log(`Socket ${socket.id} (user: ${participant.username}) disconnected from room ${roomCode}`);
+      console.log(`User ${participant.username} disconnected from auction room ${roomCode}`);
     } catch (error) {
       console.error("Error in disconnect handler:", error);
     }
