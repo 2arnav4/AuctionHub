@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Copy,
@@ -17,6 +17,7 @@ import { Button } from "../components/ui/Button";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useSocket } from "../hooks/useSocket";
 import { addAuctionItem } from "../services/api";
+import { getSocket } from "../services/socket";
 
 export function LobbyPage() {
   const { code } = useParams<{ code: string }>();
@@ -106,6 +107,21 @@ export function LobbyPage() {
       setItemError(err.message ?? "Failed to add item.");
     } finally {
       setItemLoading(false);
+    }
+  };
+
+  // Redirect to live auction page when the room transitions to active/live status
+  useEffect(() => {
+    if (room?.status === "live" && code) {
+      navigate(`/auction/${code}`);
+    }
+  }, [room?.status, code, navigate]);
+
+  // Request the server to start the auction (Admin only)
+  const handleStartAuction = () => {
+    const socket = getSocket();
+    if (socket) {
+      socket.emit("auction:start");
     }
   };
 
@@ -213,6 +229,29 @@ export function LobbyPage() {
             Leave Lobby
           </Button>
         </div>
+
+        {/* Host Control Center banner */}
+        {isAdmin && (
+          <div className="border border-amber-500/20 bg-amber-500/5 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in-up">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-1.5">
+                <Crown className="h-4 w-4" />
+                Host Control Center
+              </h3>
+              <p className="text-xs text-text-secondary">
+                Prepare your catalog. Once participants have joined, click the button to launch the live auction timer.
+              </p>
+            </div>
+            <Button
+              onClick={handleStartAuction}
+              disabled={items.length === 0}
+              variant="primary"
+              className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.15)] text-zinc-950 font-bold cursor-pointer"
+            >
+              Start Live Auction
+            </Button>
+          </div>
+        )}
 
         {/* Dashboard Room/Profile Info */}
         <div className="grid gap-6 sm:grid-cols-5">
