@@ -1,35 +1,26 @@
 import type { Request, Response, NextFunction } from "express";
 import * as itemService from "../services/item.service.js";
+import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 
 /**
  * Handles registering a new auction item.
  * POST /api/rooms/:code/items
  */
 export async function addItemHandler(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const code = req.params.code as string;
     const { name, description, startingBid } = req.body;
 
-    // Extract authorization session token from standard headers
-    let sessionToken = req.headers["x-session-token"] || req.headers["session-token"];
-    
-    if (!sessionToken && req.headers["authorization"]) {
-      const authHeader = req.headers["authorization"] as string;
-      if (authHeader.startsWith("Bearer ")) {
-        sessionToken = authHeader.substring(7);
-      }
-    }
-
     const newItem = await itemService.createAuctionItem(
       code,
-      sessionToken as string,
+      req.sessionToken as string,
       name,
       description,
-      Number(startingBid)
+      Number(startingBid),
     );
 
     // Retrieve global Socket.IO instance and broadcast event
@@ -37,11 +28,13 @@ export async function addItemHandler(
     if (io) {
       const roomCode = code.toUpperCase();
       const socketRoomId = `room:${roomCode}`;
-      
+
       io.to(socketRoomId).emit("item:added", {
         item: newItem,
       });
-      console.log(`Realtime broadcast 'item:added' sent to channel ${socketRoomId} for item: ${newItem.name}`);
+      console.log(
+        `Realtime broadcast 'item:added' sent to channel ${socketRoomId} for item: ${newItem.name}`,
+      );
     }
 
     res.status(201).json(newItem);
@@ -57,7 +50,7 @@ export async function addItemHandler(
 export async function getItemsHandler(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const code = req.params.code as string;
