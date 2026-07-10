@@ -27,7 +27,7 @@ export const env = {
   nodeEnv,
   clientUrl: getEnv("CLIENT_URL", "http://localhost:5173"),
   mongodbUri: getEnv("MONGODB_URI", "mongodb://localhost:27017/auction-room"),
-  auctionItemDurationSeconds: getPositiveInteger("AUCTION_ITEM_DURATION_SECONDS", "30"),
+  auctionItemDurationSeconds: getPositiveInteger("AUCTION_ITEM_DURATION_SECONDS", "60"),
   jwtSecret:
     process.env.JWT_SECRET ??
     (nodeEnv === "production"

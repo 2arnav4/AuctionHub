@@ -3,6 +3,8 @@ import { AuctionItem } from "../../models/itemModel.js";
 import { Bid } from "../../models/bidModel.js";
 import { Room } from "../../models/roomModel.js";
 import { isValidPositiveAmount } from "../../utils/auction.js";
+import { env } from "../../config/env.js";
+import { scheduleAuctionTimer } from "./resolutionHandler.js";
 
 /**
  * Registers Bidding-related event listeners for a given Socket instance.
@@ -92,6 +94,9 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
       await newBid.save();
 
       // A conditional update prevents concurrent requests from accepting a stale/lower bid.
+      // Reset the countdown timer back to the original timing (60s from now)
+      const newEndsAt = new Date(Date.now() + env.auctionItemDurationSeconds * 1000);
+
       const updatedItem = await AuctionItem.findOneAndUpdate(
         {
           _id: activeItem._id,
@@ -104,6 +109,7 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
             currentBid: amount,
             highestBidderId: participant._id,
             highestBidderUsername: participant.username,
+            endsAt: newEndsAt,
           },
         },
         { new: true },
@@ -122,6 +128,14 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         });
         return;
       }
+
+      // Reset Room endsAt and reschedule the authoritative server-owned timer
+      await Room.updateOne(
+        { _id: room._id },
+        { $set: { endsAt: newEndsAt } }
+      );
+      room.endsAt = newEndsAt;
+      scheduleAuctionTimer(io, room._id.toString(), newEndsAt);
 
       // 6. Broadcast successful bid
       io.to(socketRoomId).emit("bid:accepted", {

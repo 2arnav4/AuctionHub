@@ -84,6 +84,9 @@ export function useSocket(roomCode: string) {
       setActiveItem(data.item);
       setBids((current) => current.some((bid) => bid._id === data.bid._id) ? current : [data.bid, ...current]);
       setBidError(null);
+      if (data.item.endsAt) {
+        setRoom((current) => current ? { ...current, endsAt: data.item.endsAt } : current);
+      }
     };
     const handleBidRejected = (data: { reason: string; minimumBid: number }) => setBidError(data);
     const handleItemEnded = () => {
