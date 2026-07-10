@@ -70,24 +70,15 @@ export function AuthPortal() {
               <HelpCircle className="h-3 w-3 text-accent" />
               Instant Demo Accounts
             </span>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => triggerQuickDemo("admin", "password123")}
-                disabled={loading}
-                className="flex flex-col items-center justify-center p-3 rounded-lg border border-border bg-surface-overlay/25 hover:bg-accent/10 hover:border-accent/40 text-center transition-all cursor-pointer group"
-              >
-                <span className="text-[10px] font-bold text-accent group-hover:text-accent-hover">Host Demo (Admin)</span>
-                <span className="text-[8px] text-text-muted mt-0.5 font-mono">admin / password123</span>
-              </button>
+            <div className="grid grid-cols-1">
               <button
                 type="button"
                 onClick={() => triggerQuickDemo("demo", "password123")}
                 disabled={loading}
-                className="flex flex-col items-center justify-center p-3 rounded-lg border border-border bg-surface-overlay/25 hover:bg-accent/10 hover:border-accent/40 text-center transition-all cursor-pointer group"
+                className="flex flex-col items-center justify-center p-4 rounded-lg border border-border bg-surface-overlay/25 hover:bg-accent/10 hover:border-accent/40 text-center transition-all cursor-pointer group"
               >
-                <span className="text-[10px] font-bold text-accent group-hover:text-accent-hover">Bidder Demo (User)</span>
-                <span className="text-[8px] text-text-muted mt-0.5 font-mono">demo / password123</span>
+                <span className="text-xs font-bold text-accent group-hover:text-accent-hover">Use Demo Account</span>
+                <span className="text-[10px] text-text-muted mt-0.5 font-mono">Username: demo / Password: password123</span>
               </button>
             </div>
           </div>
