@@ -5,6 +5,7 @@ export interface IParticipant extends Document {
   username: string;
   role: "admin" | "participant";
   sessionToken: string;
+  isConnected: boolean;
   joinedAt: Date;
 }
 
@@ -29,6 +30,11 @@ const ParticipantSchema = new Schema<IParticipant>({
     type: String,
     required: true,
     unique: true,
+  },
+  isConnected: {
+    type: Boolean,
+    default: false,
+    required: true,
   },
   joinedAt: {
     type: Date,

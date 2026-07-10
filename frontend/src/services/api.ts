@@ -21,6 +21,7 @@ export interface Participant {
   username: string;
   role: "admin" | "participant";
   sessionToken: string;
+  isConnected: boolean;
   joinedAt: string;
 }
 
