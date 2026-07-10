@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useSessionStore } from "../stores/useSessionStore";
-import {
-  type Participant,
-  type Room,
-  type AuctionItem,
-  type Bid,
-  getAuctionItems,
-} from "../services/api";
+import type { AuctionItem, Bid, Participant, Room } from "../services/api";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
-/**
- * Custom React hook to manage Socket.IO lifecycle, event listeners,
- * and state updates for realtime lobby presence, items, live bidding, and resolutions.
- */
+function mergeItems(current: AuctionItem[], incoming: AuctionItem[]): AuctionItem[] {
+  const byId = new Map(current.map((item) => [item._id, item]));
+  for (const item of incoming) byId.set(item._id, item);
+  return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** Manages one room-scoped socket and applies server-authoritative state updates. */
 export function useSocket(roomCode: string) {
-  const { sessionToken } = useSessionStore();
+  const sessionToken = useSessionStore((state) => state.sessionToken);
+  const hasSession = Boolean(roomCode && sessionToken);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -28,125 +26,77 @@ export function useSocket(roomCode: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!roomCode || !sessionToken) {
-      setError("Active session not found. Cannot connect to socket.");
-      setStatus("disconnected");
-      return;
-    }
+    if (!roomCode || !sessionToken) return;
 
-    // Initialize/retrieve socket connection
     const socket = connectSocket(roomCode, sessionToken);
 
-    // Sync initial state
-    setStatus(socket.connected ? "connected" : "connecting");
-
-    const handleConnect = async () => {
+    const handleConnect = () => {
       setStatus("connected");
       setError(null);
-      // Let the server join us to the room channel and fetch lobby status
       socket.emit("room:connect");
-
-      // Fetch initial upcoming items list via REST API
-      try {
-        const initialItems = await getAuctionItems(roomCode);
-        setItems(initialItems);
-      } catch (err: any) {
-        console.error("Failed to fetch initial room items:", err);
-      }
     };
-
-    const handleDisconnect = () => {
+    const handleDisconnect = () => setStatus("disconnected");
+    const handleConnectError = (connectionError: Error) => {
       setStatus("disconnected");
+      setError(connectionError.message || "Failed to connect to the realtime server.");
     };
-
-    const handleConnectError = (err: Error) => {
-      console.error("Socket connection error:", err);
-      setStatus("disconnected");
-      setError(err.message ?? "Failed to connect to the realtime server.");
-    };
-
     const handleRoomState = (data: {
       room: Room;
       participants: Participant[];
       activeItem: AuctionItem | null;
-      bids?: Bid[];
+      bids: Bid[];
+      items: AuctionItem[];
     }) => {
       setRoom(data.room);
       setParticipants(data.participants);
-      if (data.activeItem) {
-        setActiveItem(data.activeItem);
-      }
-      if (data.bids) {
-        setBids(data.bids);
-      }
+      setActiveItem(data.activeItem);
+      setBids(data.bids);
+      // Merge rather than replace: a concurrent item:added event can never be lost.
+      setItems((current) => mergeItems(current, data.items));
     };
-
     const handleParticipantJoined = (data: { participant: Participant }) => {
-      setParticipants((prev) => {
-        const exists = prev.some((p) => p._id === data.participant._id);
-        if (exists) {
-          // If participant is already in the list, set them to connected
-          return prev.map((p) =>
-            p._id === data.participant._id ? { ...p, isConnected: true } : p
-          );
-        } else {
-          // If they are a new participant, append them to the list
-          return [...prev, data.participant];
-        }
+      setParticipants((current) => {
+        const exists = current.some((participant) => participant._id === data.participant._id);
+        return exists
+          ? current.map((participant) => participant._id === data.participant._id
+            ? { ...participant, isConnected: true }
+            : participant)
+          : [...current, data.participant];
       });
     };
-
     const handleParticipantLeft = (data: { participant: Participant }) => {
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p._id === data.participant._id ? { ...p, isConnected: false } : p
-        )
-      );
+      setParticipants((current) => current.map((participant) => participant._id === data.participant._id
+        ? { ...participant, isConnected: false }
+        : participant));
     };
-
     const handleItemAdded = (data: { item: AuctionItem }) => {
-      setItems((prev) => {
-        const exists = prev.some((it) => it._id === data.item._id);
-        if (exists) return prev;
-        return [...prev, data.item];
-      });
+      setItems((current) => mergeItems(current, [data.item]));
     };
-
-    const handleAuctionStarted = (data: { room: Room }) => {
-      setRoom(data.room);
-    };
-
-    const handleItemActivated = (data: { item: AuctionItem; startedAt: string }) => {
+    const handleAuctionStarted = (data: { room: Room }) => setRoom(data.room);
+    const handleItemActivated = (data: { item: AuctionItem; startedAt: string; endsAt: string }) => {
       setActiveItem(data.item);
       setActiveItemStartedAt(data.startedAt);
-      setBids([]); // Reset bids timeline for new active item
+      setBids([]);
       setBidError(null);
+      setRoom((current) => current ? { ...current, status: "live", endsAt: data.endsAt } : current);
     };
-
     const handleBidAccepted = (data: { bid: Bid; item: AuctionItem }) => {
       setActiveItem(data.item);
-      setBids((prev) => {
-        const exists = prev.some((b) => b._id === data.bid._id);
-        if (exists) return prev;
-        return [data.bid, ...prev]; // Prepend newest bid to the history
-      });
+      setBids((current) => current.some((bid) => bid._id === data.bid._id) ? current : [data.bid, ...current]);
       setBidError(null);
     };
-
-    const handleBidRejected = (data: { reason: string; minimumBid: number }) => {
-      setBidError({ reason: data.reason, minimumBid: data.minimumBid });
-    };
-
+    const handleBidRejected = (data: { reason: string; minimumBid: number }) => setBidError(data);
     const handleItemEnded = () => {
-      setBids([]); // Clear local bids log on item resolution
+      setActiveItem(null);
+      setBids([]);
       setBidError(null);
     };
-
     const handleAuctionCompleted = (data: { room: Room }) => {
       setRoom(data.room);
+      setActiveItem(null);
+      setBids([]);
     };
 
-    // Bind event listeners
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectError);
@@ -161,12 +111,8 @@ export function useSocket(roomCode: string) {
     socket.on("item:ended", handleItemEnded);
     socket.on("auction:completed", handleAuctionCompleted);
 
-    // If socket is already connected when this hook mounts, trigger connect handler
-    if (socket.connected) {
-      handleConnect();
-    }
+    if (socket.connected) handleConnect();
 
-    // Cleanup listeners and connection when the hook component unmounts
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
@@ -186,18 +132,15 @@ export function useSocket(roomCode: string) {
   }, [roomCode, sessionToken]);
 
   return {
-    status,
+    status: hasSession ? status : "disconnected",
     room,
     participants,
     items,
-    setItems,
     activeItem,
-    setActiveItem,
     activeItemStartedAt,
     bids,
-    setBids,
     bidError,
     setBidError,
-    error,
+    error: hasSession ? error : "Active session not found. Cannot connect to socket.",
   };
 }

@@ -1,8 +1,10 @@
 import type { Server, Socket } from "socket.io";
 import { Participant } from "../../models/participant.model.js";
 import { AuctionItem } from "../../models/item.model.js";
-import { Bid } from "../../models/bid.model.js";
+import { Bid, type IBid } from "../../models/bid.model.js";
 import { Room } from "../../models/room.model.js";
+
+const participantSockets = new Map<string, Set<string>>();
 
 /**
  * Registers Room-related event listeners for a given Socket instance.
@@ -32,9 +34,16 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       // Join the Socket.IO room channel
       socket.join(socketRoomId);
 
-      // Update connection status in MongoDB
-      participant.isConnected = true;
-      await participant.save();
+      const participantKey = participant._id.toString();
+      const sockets = participantSockets.get(participantKey) ?? new Set<string>();
+      const becameOnline = sockets.size === 0;
+      sockets.add(socket.id);
+      participantSockets.set(participantKey, sockets);
+      socket.data.hasJoinedRoom = true;
+
+      if (becameOnline) {
+        await Participant.updateOne({ _id: participant._id }, { $set: { isConnected: true } });
+      }
 
       // Retrieve all participants of this room
       const participants = await Participant.find({ roomId: room._id }).select(
@@ -43,7 +52,7 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
 
       // Fetch currently active item details and its bids if room is live
       let activeItem = null;
-      let bids: any[] = [];
+      let bids: IBid[] = [];
       if (room.status === "live" && room.currentItemId) {
         activeItem = await AuctionItem.findById(room.currentItemId);
         if (activeItem) {
@@ -51,12 +60,15 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         }
       }
 
+      const items = await AuctionItem.find({ roomId: room._id }).sort({ createdAt: 1 });
+
       // Emit room:state to the current client
       socket.emit("room:state", {
         room,
         participants,
         activeItem,
         bids,
+        items,
       });
 
       // Broadcast participant:joined to other clients in the room
@@ -70,9 +82,11 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         joinedAt: participant.joinedAt,
       };
 
-      socket.to(socketRoomId).emit("participant:joined", {
-        participant: cleanParticipant,
-      });
+      if (becameOnline) {
+        socket.to(socketRoomId).emit("participant:joined", {
+          participant: cleanParticipant,
+        });
+      }
 
       console.log(`User ${participant.username} connected to auction room ${roomCode}`);
     } catch (error) {
@@ -87,14 +101,19 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
       const participant = socket.data.participant;
       const room = socket.data.room;
 
-      if (!participant || !room) return;
+      if (!participant || !room || !socket.data.hasJoinedRoom) return;
 
       const roomCode = room.code;
       const socketRoomId = `room:${roomCode}`;
 
-      // Update connection status in MongoDB
-      participant.isConnected = false;
-      await participant.save();
+      const participantKey = participant._id.toString();
+      const sockets = participantSockets.get(participantKey);
+      sockets?.delete(socket.id);
+      const becameOffline = !sockets || sockets.size === 0;
+      if (becameOffline) participantSockets.delete(participantKey);
+
+      if (!becameOffline) return;
+      await Participant.updateOne({ _id: participant._id }, { $set: { isConnected: false } });
 
       // Broadcast participant:left to other clients in the room
       const cleanParticipant = {

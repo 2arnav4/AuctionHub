@@ -13,6 +13,7 @@ export interface Room {
   name: string;
   status: "lobby" | "live" | "completed";
   adminParticipantId?: string | null;
+  endsAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,7 +23,7 @@ export interface Participant {
   roomId: string;
   username: string;
   role: "admin" | "participant";
-  sessionToken: string;
+  sessionToken?: string;
   isConnected: boolean;
   joinedAt: string;
 }
@@ -174,6 +175,7 @@ export interface AuctionItem {
   highestBidderId?: string | null;
   highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
+  endsAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
