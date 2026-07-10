@@ -2,9 +2,23 @@
 
 A premium, modern, and secure realtime auction platform built with a dark Vercel/Linear-inspired SaaS aesthetic. The application utilizes a hybrid REST + authoritative WebSockets architecture to synchronize participant presence, catalog additions, bid entries, and item resolutions in real-time.
 
+**Live Demo URL**: [https://auction-assignment.vercel.app/](https://auction-assignment.vercel.app/)
+
 ---
 
-## 1. Technology Stack
+## 1. Demo Credentials
+
+Directly on the login page portal, you can access the platform using:
+* **Unified Demo Account**: Click **"Use Demo Account"** to instantly sign in with:
+  * **Username**: `demo`
+  * **Password**: `password123`
+* **Custom Guest Login**: Enter any custom alias username in the text field to sign in as a guest.
+
+*Once logged in, the dashboard allows you to either **Create Auction Room** (where you become the room's host/admin) or **Join Existing Room** (where you join as a participant bidder).*
+
+---
+
+## 2. Technology Stack
 
 * **Frontend**: React 18, TypeScript, Vite, Zustand (for persisted local storage state management), and Vanilla CSS / Tailwind (for customized dark layouts).
 * **Backend**: Node.js, Express, TypeScript, and MongoDB (via Mongoose ODM).
@@ -13,7 +27,7 @@ A premium, modern, and secure realtime auction platform built with a dark Vercel
 
 ---
 
-## 2. Architecture & Design
+## 3. Architecture & Design
 
 ```mermaid
 graph TD
@@ -38,7 +52,7 @@ The system splits concerns between REST APIs and WebSockets to maximize reliabil
 
 ---
 
-## 3. Database Design
+## 4. Database Design
 
 We declare four collections in MongoDB:
 
@@ -75,7 +89,7 @@ We declare four collections in MongoDB:
 
 ---
 
-## 4. Socket.IO Event Registry
+## 5. Socket.IO Event Registry
 
 ### Client → Server
 * `room:connect`: Registers presence status, joins the client to the virtual Socket room, and triggers initial state recovery (`room:state`).
@@ -95,7 +109,7 @@ We declare four collections in MongoDB:
 
 ---
 
-## 5. Local Setup
+## 6. Local Setup
 
 ### Prerequisites
 * Node.js (v18+)
@@ -124,13 +138,31 @@ We declare four collections in MongoDB:
 
 ---
 
-## 6. Deployment Steps
+## 7. Hosting & Deployment Guidelines
 
-* **Backend**: Deploy on web services like Render, Fly.io, or AWS. Ensure `MONGODB_URI` and `CLIENT_URL` are configured inside your environment parameters, and set the start command to `node server.js` (after building package).
-* **Frontend**: Deploy on Vercel, Netlify, or AWS Amplify. Make sure to configure `VITE_API_URL` pointing to your deployed backend API.
+This project is a monorepo containing distinct `backend` and `frontend` folders:
+
+### Backend (Render Web Service)
+* **Root Directory**: `backend`
+* **Build Command**: `npm install && npm run build`
+* **Start Command**: `node server.js`
+* **Environment Variables**:
+  * `NODE_ENV`: `production`
+  * `MONGODB_URI`: (Your MongoDB Atlas connection string)
+  * `CLIENT_URL`: `https://auction-assignment.vercel.app` (Your Vercel URL)
+  * `JWT_SECRET`: (Your custom secure cookie secret)
+
+### Frontend (Vercel Web App)
+* **Framework Preset**: `Vite`
+* **Root Directory**: `frontend`
+* **Build Command**: `npm run build`
+* **Output Directory**: `dist`
+* **Install Command**: `npm install`
+* **Environment Variables**:
+  * `VITE_API_URL`: `https://auction-assignment-backend.onrender.com/api` (Your Render backend endpoint)
 
 ---
 
-## 7. AI Usage Notes
+## 8. AI Usage Notes
 
-This application was engineered iteratively under **Planning Mode** using **Google DeepMind's Advanced Agentic Coding assistant, Antigravity**. Implementation steps were planned, validated, compiled, and git-committed incrementally to maintain code quality, strict ESM relative imports, and TypeScript compilation safety.
+This application was engineered iteratively under **Planning Mode** using **Google DeepMind's Advanced Agentic Coding assistant, Antigravity**. Brief logs, prompts, and summary files outlining core design decisions are located in the `ai-transcripts/` directory.
