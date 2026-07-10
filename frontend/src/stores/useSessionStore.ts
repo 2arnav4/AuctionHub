@@ -16,7 +16,9 @@ export interface SessionState {
     role: "admin" | "participant";
   }) => void;
   clearSession: () => void;
-  setAuthUser: (user: { username: string; role: "admin" | "participant" } | null) => void;
+  setAuthUser: (
+    user: { username: string; role: "admin" | "participant" } | null,
+  ) => void;
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -36,11 +38,12 @@ export const useSessionStore = create<SessionState>()(
           username: null,
           participantId: null,
           role: null,
+          authUser: null,
         }),
       setAuthUser: (user) => set({ authUser: user }),
     }),
     {
       name: "auction-session", // Key used in localStorage
-    }
-  )
+    },
+  ),
 );
