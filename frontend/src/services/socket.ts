@@ -1,7 +1,8 @@
 import { io, Socket } from "socket.io-client";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
-const SOCKET_URL = API_URL.endsWith("/api") ? API_URL.slice(0, -4) : API_URL;
+const rawApiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+const sanitizedBaseUrl = rawApiUrl.replace(/\/$/, "");
+const SOCKET_URL = sanitizedBaseUrl.endsWith("/api") ? sanitizedBaseUrl.slice(0, -4) : sanitizedBaseUrl;
 
 let socket: Socket | null = null;
 

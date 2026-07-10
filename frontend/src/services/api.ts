@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+const rawApiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
+const sanitizedBaseUrl = rawApiUrl.replace(/\/$/, "");
+const API_URL = sanitizedBaseUrl.endsWith("/api") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/api`;
 
 // Health route is served from the root of the server
 const SERVER_ROOT_URL = API_URL.endsWith("/api")
