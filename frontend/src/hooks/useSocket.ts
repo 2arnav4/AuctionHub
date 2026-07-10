@@ -12,7 +12,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 /**
  * Custom React hook to manage Socket.IO lifecycle, event listeners,
- * and state updates for realtime lobby presence and items.
+ * and state updates for realtime lobby presence, items, and active item management.
  */
 export function useSocket(roomCode: string) {
   const { sessionToken } = useSessionStore();
@@ -20,6 +20,8 @@ export function useSocket(roomCode: string) {
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [items, setItems] = useState<AuctionItem[]>([]);
+  const [activeItem, setActiveItem] = useState<AuctionItem | null>(null);
+  const [activeItemStartedAt, setActiveItemStartedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,9 +62,16 @@ export function useSocket(roomCode: string) {
       setError(err.message ?? "Failed to connect to the realtime server.");
     };
 
-    const handleRoomState = (data: { room: Room; participants: Participant[] }) => {
+    const handleRoomState = (data: {
+      room: Room;
+      participants: Participant[];
+      activeItem: AuctionItem | null;
+    }) => {
       setRoom(data.room);
       setParticipants(data.participants);
+      if (data.activeItem) {
+        setActiveItem(data.activeItem);
+      }
     };
 
     const handleParticipantJoined = (data: { participant: Participant }) => {
@@ -96,6 +105,15 @@ export function useSocket(roomCode: string) {
       });
     };
 
+    const handleAuctionStarted = (data: { room: Room }) => {
+      setRoom(data.room);
+    };
+
+    const handleItemActivated = (data: { item: AuctionItem; startedAt: string }) => {
+      setActiveItem(data.item);
+      setActiveItemStartedAt(data.startedAt);
+    };
+
     // Bind event listeners
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
@@ -104,6 +122,8 @@ export function useSocket(roomCode: string) {
     socket.on("participant:joined", handleParticipantJoined);
     socket.on("participant:left", handleParticipantLeft);
     socket.on("item:added", handleItemAdded);
+    socket.on("auction:started", handleAuctionStarted);
+    socket.on("item:activated", handleItemActivated);
 
     // If socket is already connected when this hook mounts, trigger connect handler
     if (socket.connected) {
@@ -119,6 +139,8 @@ export function useSocket(roomCode: string) {
       socket.off("participant:joined", handleParticipantJoined);
       socket.off("participant:left", handleParticipantLeft);
       socket.off("item:added", handleItemAdded);
+      socket.off("auction:started", handleAuctionStarted);
+      socket.off("item:activated", handleItemActivated);
       disconnectSocket();
     };
   }, [roomCode, sessionToken]);
@@ -129,6 +151,8 @@ export function useSocket(roomCode: string) {
     participants,
     items,
     setItems,
+    activeItem,
+    activeItemStartedAt,
     error,
   };
 }
