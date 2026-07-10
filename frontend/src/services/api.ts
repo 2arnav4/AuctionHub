@@ -104,6 +104,9 @@ export interface AuctionItem {
   name: string;
   description?: string;
   startingBid: number;
+  currentBid: number;
+  highestBidderId?: string | null;
+  highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
   createdAt: string;
   updatedAt: string;

@@ -137,7 +137,7 @@ export function useSocket(roomCode: string) {
       setBidError({ reason: data.reason, minimumBid: data.minimumBid });
     };
 
-    const handleItemEnded = (data: { item: AuctionItem; resolution: "sold" | "unsold" }) => {
+    const handleItemEnded = () => {
       setBids([]); // Clear local bids log on item resolution
       setBidError(null);
     };
