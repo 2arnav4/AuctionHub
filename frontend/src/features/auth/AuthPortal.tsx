@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { LogIn, ShieldAlert, Key, User, HelpCircle } from "lucide-react";
+import { LogIn, ShieldAlert, User, HelpCircle, UserPlus, Lock } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
-import { login } from "../../services/api";
+import { login, register } from "../../services/api";
 import { getErrorMessage } from "../../utils/error";
 
 export function AuthPortal() {
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
 
+  const [activeTab, setActiveTab] = useState<"guest" | "signin" | "signup">("guest");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,14 +25,24 @@ export function AuthPortal() {
       return;
     }
 
+    if (!customUser && activeTab !== "guest" && !targetPass) {
+      setError("Please specify a password.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const data = await login(targetUser.trim(), targetPass);
+      let data;
+      if (!customUser && activeTab === "signup") {
+        data = await register(targetUser.trim(), targetPass);
+      } else {
+        data = await login(targetUser.trim(), targetPass ? targetPass : undefined);
+      }
       setAuthUser(data);
     } catch (err: unknown) {
-      console.error("Login failed:", err);
+      console.error("Authentication failed:", err);
       setError(getErrorMessage(err, "Authentication failed."));
     } finally {
       setLoading(false);
@@ -84,13 +95,56 @@ export function AuthPortal() {
             </div>
           </div>
 
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-border/40"></div>
-            <span className="flex-shrink mx-4 text-[9px] text-text-muted uppercase tracking-widest">Or Custom Guest Login</span>
-            <div className="flex-grow border-t border-border/40"></div>
+          {/* Selection Tabs */}
+          <div className="flex border-b border-border/40">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("guest");
+                setError(null);
+              }}
+              disabled={loading}
+              className={`flex-1 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-center transition-all border-b-2 cursor-pointer ${
+                activeTab === "guest"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Guest Access
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("signin");
+                setError(null);
+              }}
+              disabled={loading}
+              className={`flex-1 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-center transition-all border-b-2 cursor-pointer ${
+                activeTab === "signin"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("signup");
+                setError(null);
+              }}
+              disabled={loading}
+              className={`flex-1 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-center transition-all border-b-2 cursor-pointer ${
+                activeTab === "signup"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
 
-          {/* Guest Log-in Form */}
+          {/* Input Form */}
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label
@@ -105,20 +159,20 @@ export function AuthPortal() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. GuestBidder"
+                placeholder={activeTab === "guest" ? "e.g. GuestBidder" : "e.g. Alice"}
                 disabled={loading}
                 className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
               />
             </div>
 
-            {/* Password input shown only if they trigger demo username or want to verify */}
-            {["admin", "demo"].includes(username.toLowerCase().trim()) && (
+            {/* Password input shown only for Sign In, Sign Up, or when typing reserved usernames */}
+            {(activeTab !== "guest" || ["admin", "demo"].includes(username.toLowerCase().trim())) && (
               <div className="space-y-1.5 animate-fade-in">
                 <label
                   htmlFor="auth-password"
                   className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-1"
                 >
-                  <Key className="h-3 w-3 text-text-muted" />
+                  <Lock className="h-3 w-3 text-text-muted" />
                   Password
                 </label>
                 <input
@@ -140,8 +194,17 @@ export function AuthPortal() {
             className="w-full mt-2"
             variant="primary"
           >
-            <LogIn className="h-4 w-4" />
-            {loading ? "Authenticating..." : "Log In"}
+            {activeTab === "signup" ? (
+              <>
+                <UserPlus className="h-4 w-4" />
+                {loading ? "Registering..." : "Sign Up"}
+              </>
+            ) : (
+              <>
+                <LogIn className="h-4 w-4" />
+                {loading ? "Authenticating..." : activeTab === "guest" ? "Log In as Guest" : "Sign In"}
+              </>
+            )}
           </Button>
         </form>
       </div>
