@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
-const JWT_SECRET = process.env.JWT_SECRET || "mini-auction-room-jwt-secret-key-123";
+import { env } from "../config/env.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -28,7 +27,7 @@ export function optionalAuth(
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as {
+      const decoded = jwt.verify(token, env.jwtSecret) as {
         username: string;
         role: "admin" | "participant";
       };
