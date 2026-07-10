@@ -4,10 +4,12 @@ import { AppError } from "../middleware/errorHandler.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "mini-auction-room-jwt-secret-key-123";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  secure: isProd,
+  sameSite: (isProd ? "none" : "lax") as "none" | "lax" | "strict" | undefined,
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
 };
 
@@ -73,7 +75,8 @@ export async function logoutHandler(
   try {
     res.clearCookie("token", {
       httpOnly: true,
-      sameSite: "lax" as const,
+      secure: isProd,
+      sameSite: (isProd ? "none" : "lax") as "none" | "lax" | "strict" | undefined,
     });
     res.status(200).json({ message: "Logout successful." });
   } catch (error) {
