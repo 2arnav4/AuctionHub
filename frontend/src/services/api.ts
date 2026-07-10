@@ -97,3 +97,50 @@ export async function getRoom(code: string): Promise<Room> {
 
   return response.json();
 }
+
+export interface AuctionItem {
+  _id: string;
+  roomId: string;
+  name: string;
+  description?: string;
+  startingBid: number;
+  status: "pending" | "active" | "sold" | "unsold";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function addAuctionItem(
+  code: string,
+  sessionToken: string,
+  name: string,
+  description: string,
+  startingBid: number
+): Promise<AuctionItem> {
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-session-token": sessionToken,
+    },
+    body: JSON.stringify({ name, description, startingBid }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error ?? "Failed to add auction item.");
+  }
+
+  return response.json();
+}
+
+export async function getAuctionItems(code: string): Promise<AuctionItem[]> {
+  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error ?? "Failed to fetch auction items.");
+  }
+
+  return response.json();
+}
+

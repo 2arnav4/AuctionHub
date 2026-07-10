@@ -1,19 +1,25 @@
 import { useEffect, useState } from "react";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useSessionStore } from "../stores/useSessionStore";
-import { type Participant, type Room } from "../services/api";
+import {
+  type Participant,
+  type Room,
+  type AuctionItem,
+  getAuctionItems,
+} from "../services/api";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 /**
  * Custom React hook to manage Socket.IO lifecycle, event listeners,
- * and state updates for realtime lobby presence.
+ * and state updates for realtime lobby presence and items.
  */
 export function useSocket(roomCode: string) {
   const { sessionToken } = useSessionStore();
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [items, setItems] = useState<AuctionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,11 +35,19 @@ export function useSocket(roomCode: string) {
     // Sync initial state
     setStatus(socket.connected ? "connected" : "connecting");
 
-    const handleConnect = () => {
+    const handleConnect = async () => {
       setStatus("connected");
       setError(null);
       // Let the server join us to the room channel and fetch lobby status
       socket.emit("room:connect");
+
+      // Fetch initial upcoming items list via REST API
+      try {
+        const initialItems = await getAuctionItems(roomCode);
+        setItems(initialItems);
+      } catch (err: any) {
+        console.error("Failed to fetch initial room items:", err);
+      }
     };
 
     const handleDisconnect = () => {
@@ -74,6 +88,14 @@ export function useSocket(roomCode: string) {
       );
     };
 
+    const handleItemAdded = (data: { item: AuctionItem }) => {
+      setItems((prev) => {
+        const exists = prev.some((it) => it._id === data.item._id);
+        if (exists) return prev;
+        return [...prev, data.item];
+      });
+    };
+
     // Bind event listeners
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
@@ -81,6 +103,7 @@ export function useSocket(roomCode: string) {
     socket.on("room:state", handleRoomState);
     socket.on("participant:joined", handleParticipantJoined);
     socket.on("participant:left", handleParticipantLeft);
+    socket.on("item:added", handleItemAdded);
 
     // If socket is already connected when this hook mounts, trigger connect handler
     if (socket.connected) {
@@ -95,6 +118,7 @@ export function useSocket(roomCode: string) {
       socket.off("room:state", handleRoomState);
       socket.off("participant:joined", handleParticipantJoined);
       socket.off("participant:left", handleParticipantLeft);
+      socket.off("item:added", handleItemAdded);
       disconnectSocket();
     };
   }, [roomCode, sessionToken]);
@@ -103,6 +127,8 @@ export function useSocket(roomCode: string) {
     status,
     room,
     participants,
+    items,
+    setItems,
     error,
   };
 }

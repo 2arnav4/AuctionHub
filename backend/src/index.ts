@@ -10,7 +10,8 @@ await connectDB();
 const app = createApp();
 const httpServer = createServer(app);
 
-createSocketServer(httpServer);
+const io = createSocketServer(httpServer);
+app.set("io", io);
 
 httpServer.listen(env.port, () => {
   console.log(`Server running on http://localhost:${env.port}`);

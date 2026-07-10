@@ -1,10 +1,22 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Copy, Check, LogOut, Clock, Users, Crown, AlertCircle } from "lucide-react";
+import {
+  Copy,
+  Check,
+  LogOut,
+  Clock,
+  Users,
+  Crown,
+  AlertCircle,
+  Tag,
+  PlusCircle,
+  FileText,
+} from "lucide-react";
 import { PageContainer } from "../components/ui/PageContainer";
 import { Button } from "../components/ui/Button";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useSocket } from "../hooks/useSocket";
+import { addAuctionItem } from "../services/api";
 
 export function LobbyPage() {
   const { code } = useParams<{ code: string }>();
@@ -14,18 +26,28 @@ export function LobbyPage() {
     roomCode: sessionRoomCode,
     username: sessionUsername,
     role: sessionRole,
+    sessionToken,
     clearSession,
   } = useSessionStore();
 
-  // Connect to the socket server to sync room state in realtime
+  // Connect to the socket server to sync room and items state in realtime
   const {
     status: socketStatus,
     room,
     participants,
+    items,
     error: socketError,
   } = useSocket(code || "");
 
   const [copied, setCopied] = useState(false);
+
+  // Admin Item Form State
+  const [itemName, setItemName] = useState("");
+  const [itemDesc, setItemDesc] = useState("");
+  const [itemBid, setItemBid] = useState("");
+  const [itemLoading, setItemLoading] = useState(false);
+  const [itemError, setItemError] = useState<string | null>(null);
+  const [itemSuccess, setItemSuccess] = useState(false);
 
   // Security check: Redirect if the user has no session or is in the wrong room
   const hasNoAccess = !sessionUsername || !sessionRole || sessionRoomCode !== code;
@@ -44,6 +66,47 @@ export function LobbyPage() {
   const handleLeaveRoom = () => {
     clearSession();
     navigate("/");
+  };
+
+  // Submit new auction item (Admin only)
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code || !sessionToken) return;
+
+    if (!itemName.trim()) {
+      setItemError("Item name is required.");
+      return;
+    }
+    const bidAmount = Number(itemBid);
+    if (isNaN(bidAmount) || bidAmount <= 0) {
+      setItemError("Starting bid must be positive.");
+      return;
+    }
+
+    setItemLoading(true);
+    setItemError(null);
+    setItemSuccess(false);
+
+    try {
+      await addAuctionItem(
+        code,
+        sessionToken,
+        itemName.trim(),
+        itemDesc.trim(),
+        bidAmount
+      );
+      
+      // Clear form on success
+      setItemName("");
+      setItemDesc("");
+      setItemBid("");
+      setItemSuccess(true);
+      setTimeout(() => setItemSuccess(false), 3000);
+    } catch (err: any) {
+      setItemError(err.message ?? "Failed to add item.");
+    } finally {
+      setItemLoading(false);
+    }
   };
 
   // Show dynamic loader until we get the room details from the socket room state
@@ -107,9 +170,11 @@ export function LobbyPage() {
     );
   }
 
+  const isAdmin = sessionRole === "admin";
+
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16">
-      <div className="mx-auto max-w-3xl w-full space-y-8">
+      <div className="mx-auto max-w-4xl w-full space-y-8">
         
         {/* Connection status header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
@@ -149,11 +214,10 @@ export function LobbyPage() {
           </Button>
         </div>
 
-        {/* Dashboard Grid */}
-        <div className="grid gap-6 md:grid-cols-5">
-          
+        {/* Dashboard Room/Profile Info */}
+        <div className="grid gap-6 sm:grid-cols-5">
           {/* Room Details Card (3/5 width) */}
-          <div className="md:col-span-3 border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 flex flex-col justify-between shadow-lg">
+          <div className="sm:col-span-3 border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 flex flex-col justify-between shadow-lg">
             <div className="space-y-1.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
                 Invite Code
@@ -182,7 +246,7 @@ export function LobbyPage() {
           </div>
 
           {/* User Profile Card (2/5 width) */}
-          <div className="md:col-span-2 border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 flex flex-col justify-between shadow-lg">
+          <div className="sm:col-span-2 border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 flex flex-col justify-between shadow-lg">
             <div className="space-y-1.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
                 Your Connection
@@ -223,14 +287,157 @@ export function LobbyPage() {
           </div>
         </div>
 
-        {/* Live Lobby Presence List */}
-        <div className="border border-border bg-surface-raised/30 p-6 rounded-xl space-y-4 shadow-sm">
-          <div className="flex items-center justify-between border-b border-border/40 pb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2">
-              <Users className="h-3.5 w-3.5 text-accent" />
-              Lobby Participants ({participants.length})
+        {/* Realtime Catalog & Admin Form */}
+        <div className="grid gap-6 md:grid-cols-5 items-start">
+          
+          {/* Upcoming Items List (3/5 width) */}
+          <div className={`${isAdmin ? "md:col-span-3" : "md:col-span-5"} border border-border bg-surface-raised/40 p-6 rounded-xl space-y-4 shadow-lg min-h-[300px] flex flex-col`}>
+            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
+              <Tag className="h-4 w-4 text-accent" />
+              Upcoming Auction Items ({items.length})
             </span>
+
+            {items.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-2">
+                <FileText className="h-8 w-8 text-text-muted stroke-[1.5]" />
+                <p className="text-sm font-medium text-text-secondary">No items added yet</p>
+                <p className="text-xs text-text-muted leading-relaxed max-w-xs">
+                  {isAdmin
+                    ? "Add items on the side panel to prepare the auction list."
+                    : "The host is preparing the catalog. Items added will appear here instantly."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {items.map((item) => (
+                  <div
+                    key={item._id}
+                    className="border border-border/50 bg-surface-overlay/50 p-4 rounded-lg flex justify-between items-start gap-4 transition-all hover:border-accent/30"
+                  >
+                    <div className="space-y-1 overflow-hidden">
+                      <h4 className="text-sm font-semibold text-text-primary truncate">
+                        {item.name}
+                      </h4>
+                      {item.description ? (
+                        <p className="text-xs text-text-secondary leading-relaxed line-clamp-2">
+                          {item.description}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-text-muted italic">No description provided</p>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <span className="text-xs text-text-muted block">Base Bid</span>
+                      <span className="text-sm font-bold text-accent">
+                        ₹{item.startingBid.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Add Auction Item form (2/5 width, visible to Admin only) */}
+          {isAdmin && (
+            <div className="md:col-span-2 border border-border bg-surface-raised/40 p-6 rounded-xl space-y-4 shadow-lg">
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
+                <PlusCircle className="h-4 w-4 text-accent" />
+                Add Auction Item
+              </span>
+
+              <form onSubmit={handleAddItem} className="space-y-4">
+                {itemError && (
+                  <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p>{itemError}</p>
+                  </div>
+                )}
+                {itemSuccess && (
+                  <div className="flex items-start gap-2.5 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-xs text-green-400">
+                    <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p>Item added and synchronized successfully!</p>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label htmlFor="itemName" className="text-xs font-medium text-text-secondary">
+                    Item Name
+                  </label>
+                  <input
+                    id="itemName"
+                    type="text"
+                    required
+                    placeholder="e.g. MS Dhoni Signed Bat"
+                    value={itemName}
+                    onChange={(e) => setItemName(e.target.value)}
+                    className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
+                    disabled={itemLoading}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="itemBid" className="text-xs font-medium text-text-secondary">
+                    Starting Bid (₹)
+                  </label>
+                  <input
+                    id="itemBid"
+                    type="number"
+                    required
+                    placeholder="e.g. 500"
+                    min="1"
+                    value={itemBid}
+                    onChange={(e) => setItemBid(e.target.value)}
+                    className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
+                    disabled={itemLoading}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="itemDesc" className="text-xs font-medium text-text-secondary">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    id="itemDesc"
+                    placeholder="e.g. Match-worn and signed collectibles."
+                    rows={3}
+                    value={itemDesc}
+                    onChange={(e) => setItemDesc(e.target.value)}
+                    className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none resize-none"
+                    disabled={itemLoading}
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={itemLoading}
+                  className="w-full text-xs py-2"
+                  variant="primary"
+                >
+                  {itemLoading ? (
+                    <>
+                      <Clock className="h-3.5 w-3.5 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <PlusCircle className="h-3.5 w-3.5" />
+                      Register Item
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Realtime Active Presence Board */}
+        <div className="border border-border bg-surface-raised/35 p-6 rounded-xl space-y-4 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
+            <Users className="h-3.5 w-3.5 text-accent" />
+            Lobby Bidders ({participants.length})
+          </span>
 
           <div className="grid gap-3 sm:grid-cols-2">
             {participants.map((p) => (
@@ -274,30 +481,6 @@ export function LobbyPage() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Informative Waiting Card */}
-        <div className="border border-border/60 bg-surface-raised/20 p-8 rounded-xl text-center space-y-4 shadow-sm relative overflow-hidden">
-          <div className="absolute left-1/2 top-1/2 h-36 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/5 blur-[50px] pointer-events-none" />
-
-          <div className="relative flex flex-col items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
-              <Clock className="h-5 w-5 text-accent animate-pulse" />
-            </div>
-
-            <div className="space-y-1.5 max-w-md mx-auto">
-              <h3 className="text-base font-semibold text-text-primary">
-                {sessionRole === "admin"
-                  ? "Waiting for participants..."
-                  : "Waiting for host to start..."}
-              </h3>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                {sessionRole === "admin"
-                  ? "Bidders are entering this lobby in real-time. Once websocket controls are added in the next milestone, you will be able to launch the live bidding timer."
-                  : "The host is setting up the auction items. Once they start, this screen will transition automatically to the bidding dashboard."}
-              </p>
-            </div>
           </div>
         </div>
       </div>
