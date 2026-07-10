@@ -6,6 +6,7 @@ import { ResultsPage } from "../features/results/ResultsPage";
 import { CreateRoomPage } from "../pages/CreateRoomPage";
 import { HomePage } from "../pages/HomePage";
 import { JoinRoomPage } from "../pages/JoinRoomPage";
+import { LobbyPage } from "../pages/LobbyPage";
 
 export function AppRouter() {
   return (
@@ -14,6 +15,7 @@ export function AppRouter() {
         <Route path="/" element={<HomePage />} />
         <Route path="/create" element={<CreateRoomPage />} />
         <Route path="/join" element={<JoinRoomPage />} />
+        <Route path="/lobby/:code" element={<LobbyPage />} />
         <Route path="/room/:code" element={<RoomPage />} />
         <Route path="/auction/:code" element={<AuctionPage />} />
         <Route path="/results/:code" element={<ResultsPage />} />
