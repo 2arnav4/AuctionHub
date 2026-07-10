@@ -23,7 +23,7 @@ export async function createAuctionItem(
   if (!name?.trim()) {
     throw new AppError("Item name is required.", 400);
   }
-  if (startingBid === undefined || startingBid <= 0) {
+  if (!Number.isFinite(startingBid) || startingBid <= 0) {
     throw new AppError("Starting bid must be positive.", 400);
   }
 

@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IParticipant extends Document {
   roomId: mongoose.Types.ObjectId;
   username: string;
+  usernameNormalized: string;
   role: "admin" | "participant";
   sessionToken: string;
   isConnected: boolean;
@@ -19,6 +20,12 @@ const ParticipantSchema = new Schema<IParticipant>({
     type: String,
     required: true,
     trim: true,
+  },
+  usernameNormalized: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
   },
   role: {
     type: String,
@@ -43,8 +50,8 @@ const ParticipantSchema = new Schema<IParticipant>({
   },
 });
 
-// Compound unique index so username is unique within a single room
-ParticipantSchema.index({ roomId: 1, username: 1 }, { unique: true });
+// Compound unique index so usernames are unique within a single room, regardless of case.
+ParticipantSchema.index({ roomId: 1, usernameNormalized: 1 }, { unique: true });
 
 export const Participant = mongoose.model<IParticipant>(
   "Participant",

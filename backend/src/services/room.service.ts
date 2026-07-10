@@ -32,13 +32,14 @@ export async function createRoom(username: string, roomName: string) {
   const participant = new Participant({
     roomId: room._id,
     username: username.trim(),
+    usernameNormalized: username.trim().toLowerCase(),
     role: "admin",
     sessionToken,
   });
   await participant.save();
 
   // 4. Link admin participant id to the room
-  room.adminParticipantId = participant._id as any;
+  room.adminParticipantId = participant._id;
   await room.save();
 
   return {
@@ -71,10 +72,12 @@ export async function joinRoom(code: string, username: string) {
     throw new AppError("This auction room has already completed", 400);
   }
 
-  // 2. Verify that username is not already taken in this room (case-insensitive check)
+  const normalizedUsername = username.trim().toLowerCase();
+
+  // 2. Verify that username is not already taken in this room.
   const existingParticipant = await Participant.findOne({
     roomId: room._id,
-    username: { $regex: new RegExp(`^${username.trim()}$`, "i") },
+    usernameNormalized: normalizedUsername,
   });
   if (existingParticipant) {
     throw new AppError(`Username "${username}" is already taken in this room`, 400);
@@ -85,6 +88,7 @@ export async function joinRoom(code: string, username: string) {
   const participant = new Participant({
     roomId: room._id,
     username: username.trim(),
+    usernameNormalized: normalizedUsername,
     role: "participant",
     sessionToken,
   });
