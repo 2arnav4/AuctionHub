@@ -1,5 +1,6 @@
 import type { Server, Socket } from "socket.io";
 import { Participant } from "../../models/participant.model.js";
+import { AuctionItem } from "../../models/item.model.js";
 
 /**
  * Registers Room-related event listeners for a given Socket instance.
@@ -31,10 +32,17 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
         "-sessionToken" // Hide sensitive session tokens
       );
 
+      // Fetch currently active item details if room is live
+      let activeItem = null;
+      if (room.status === "live" && room.currentItemId) {
+        activeItem = await AuctionItem.findById(room.currentItemId);
+      }
+
       // Emit room:state to the current client
       socket.emit("room:state", {
         room,
         participants,
+        activeItem,
       });
 
       // Broadcast participant:joined to other clients in the room

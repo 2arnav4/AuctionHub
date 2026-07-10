@@ -3,6 +3,7 @@ import { Server } from "socket.io";
 import { corsOptions } from "../config/cors.js";
 import { socketAuthMiddleware } from "./middleware/auth.js";
 import { registerRoomHandlers } from "./handlers/room.handler.js";
+import { registerAuctionHandlers } from "./handlers/auction.handler.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server(httpServer, {
@@ -15,6 +16,7 @@ export function createSocketServer(httpServer: HttpServer) {
   // Listen for socket connections and register event handlers
   io.on("connection", (socket) => {
     registerRoomHandlers(io, socket);
+    registerAuctionHandlers(io, socket);
   });
 
   return io;
