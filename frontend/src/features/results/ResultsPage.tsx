@@ -4,6 +4,7 @@ import { CheckCircle, AlertCircle, Clock, Home, Award, DollarSign } from "lucide
 import { PageContainer } from "../../components/ui/PageContainer";
 import { Button } from "../../components/ui/Button";
 import { getRoomResults, type AuctionItem } from "../../services/api";
+import { getErrorMessage } from "../../utils/error";
 
 export function ResultsPage() {
   const { code } = useParams<{ code: string }>();
@@ -21,9 +22,9 @@ export function ResultsPage() {
         setLoading(true);
         const data = await getRoomResults(code);
         setResults(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Failed to load results:", err);
-        setError(err.message ?? "Failed to fetch auction results.");
+        setError(getErrorMessage(err, "Failed to fetch auction results."));
       } finally {
         setLoading(false);
       }

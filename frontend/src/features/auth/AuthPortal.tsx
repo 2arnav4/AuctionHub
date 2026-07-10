@@ -3,6 +3,7 @@ import { LogIn, ShieldAlert, Key, User, HelpCircle } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { login } from "../../services/api";
+import { getErrorMessage } from "../../utils/error";
 
 export function AuthPortal() {
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
@@ -12,7 +13,7 @@ export function AuthPortal() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLoginSubmit = async (e: React.FormEvent, customUser?: string, customPass?: string) => {
+  const handleLoginSubmit = async (e: React.FormEvent | null, customUser?: string, customPass?: string) => {
     if (e) e.preventDefault();
 
     const targetUser = customUser ?? username;
@@ -29,9 +30,9 @@ export function AuthPortal() {
     try {
       const data = await login(targetUser.trim(), targetPass);
       setAuthUser(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Login failed:", err);
-      setError(err.message ?? "Authentication failed.");
+      setError(getErrorMessage(err, "Authentication failed."));
     } finally {
       setLoading(false);
     }
@@ -40,7 +41,7 @@ export function AuthPortal() {
   const triggerQuickDemo = (user: string, pass: string) => {
     setUsername(user);
     setPassword(pass);
-    handleLoginSubmit(null as any, user, pass);
+    void handleLoginSubmit(null, user, pass);
   };
 
   return (

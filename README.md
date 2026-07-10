@@ -1,168 +1,131 @@
 # Mini Realtime Auction Room
 
-A premium, modern, and secure realtime auction platform built with a dark Vercel/Linear-inspired SaaS aesthetic. The application utilizes a hybrid REST + authoritative WebSockets architecture to synchronize participant presence, catalog additions, bid entries, and item resolutions in real-time.
+A full-stack, server-authoritative auction application. Hosts create a room and prepare its catalog; bidders join with a room code, receive catalog and auction updates through Socket.IO, and place bids on the active item. MongoDB remains the durable source of truth, so a reload can recover the current room state.
 
-**Live Demo URL**: [https://auction-assignment.vercel.app/](https://auction-assignment.vercel.app/)
+**Live demo:** [auction-assignment.vercel.app](https://auction-assignment.vercel.app/)
 
----
+## Demo flow
 
-## 1. Demo Credentials
+1. Open the app and choose **Use Demo Account** (`demo` / `password123`), or enter a guest alias.
+2. Create a room to become that room's host, then add one or more items.
+3. Open the app in a separate browser profile or incognito window, sign in with a different alias, and join using the room code.
+4. Start the auction as the host. Bidders are moved to the live auction and can place bids. The host marks each item sold or unsold to advance the auction.
 
-Directly on the login page portal, you can access the platform using:
-* **Unified Demo Account**: Click **"Use Demo Account"** to instantly sign in with:
-  * **Username**: `demo`
-  * **Password**: `password123`
-* **Custom Guest Login**: Enter any custom alias username in the text field to sign in as a guest.
+The two browser sessions need different aliases because a username may only be used once within a room.
 
-*Once logged in, the dashboard allows you to either **Create Auction Room** (where you become the room's host/admin) or **Join Existing Room** (where you join as a participant bidder).*
+## Stack
 
----
+- Frontend: React 19, TypeScript, Vite, Tailwind CSS, Zustand
+- Backend: Node.js, Express, TypeScript, Mongoose
+- Realtime: Socket.IO
+- Database: MongoDB
 
-## 2. Technology Stack
-
-* **Frontend**: React 18, TypeScript, Vite, Zustand (for persisted local storage state management), and Vanilla CSS / Tailwind (for customized dark layouts).
-* **Backend**: Node.js, Express, TypeScript, and MongoDB (via Mongoose ODM).
-* **Realtime Sockets**: Socket.IO (v4) with authoritative server handshake validations.
-* **Database**: MongoDB (Local or Atlas clusters) with compound unique indexes.
-
----
-
-## 3. Architecture & Design
+## Architecture
 
 ```mermaid
-graph TD
-    Client[React Client] -- 1. Onboard / Register Session REST --> API[Express REST API]
-    API -- 2. Persist Rooms & Participants --> DB[(MongoDB Database)]
-    Client -- 3. Handshake sessionToken Sockets --> Sockets[Socket.IO Server]
-    Sockets -- 4. Authoritative State Validation --> DB
-    Sockets -- 5. Broadcast Realtime Updates --> ConnectedClients[All Bidders in Room]
+flowchart LR
+  C["React client"] -->|"REST: login, create/join, catalog, results"| A["Express API"]
+  C -->|"Socket.IO: presence, lifecycle, bidding"| S["Socket.IO server"]
+  A --> D[("MongoDB")]
+  S --> D
+  S -->|"room-scoped broadcasts"| C
 ```
 
-The system splits concerns between REST APIs and WebSockets to maximize reliability and efficiency:
-1. **REST APIs (Data & Session Creation)**:
-   * Handles user onboarding (room creation and bidder validation).
-   * Generates a unique `sessionToken` stored in the database and the client's `localStorage` (via Zustand).
-   * Manages static data entry (adding auction items by admin) and query results.
-2. **Socket.IO (Volatile Realtime Updates)**:
-   * During connection setup, the handshake payload contains the `sessionToken` and `roomCode`.
-   * A custom backend middleware queries MongoDB to validate that the token matches the active room before authorizing connection.
-   * Handles user presence synchronization (`isConnected: true/false`), room status progression (lobby to live, sell/unsold resolutions), bidding validation, and completion broadcasts.
-3. **Database-Driven Persistence**:
-   * All state is written to MongoDB. In the event of network disruption, clients reconnecting to the socket request the room's current state, which the server reconstructs on the fly by reading MongoDB records.
+- REST creates durable data and returns a per-room `sessionToken` after a room is created or joined.
+- Socket.IO authenticates that token during its handshake, joins the client to `room:{code}`, and broadcasts room events only to that room.
+- The server validates host permissions, item status, and bid amounts before persisting changes and broadcasting them.
+- The browser persists its current room session with Zustand. This is convenience state, not the authoritative auction state; the server rehydrates state from MongoDB on reconnect.
 
----
+## Assumptions and trade-offs
 
-## 4. Database Design
+- A room has one host and one active item at a time.
+- Bids are whole rupees and must exceed the current bid by at least ₹1.
+- Usernames are unique within a room; use separate browser profiles and different aliases for a realistic multi-user test.
+- The server owns the countdown. Its 30-second default is configurable through `AUCTION_ITEM_DURATION_SECONDS`; expiry sells an item with a highest bidder and otherwise marks it unsold.
 
-We declare four collections in MongoDB:
+## Core data model
 
-### Room
-* `code`: String (6 characters, unique index, uppercase)
-* `name`: String
-* `status`: String (`'lobby' | 'live' | 'completed'`)
-* `adminParticipantId`: ObjectId (ref `Participant`)
-* `currentItemId`: ObjectId (ref `AuctionItem`, default null)
+| Collection | Purpose |
+| --- | --- |
+| `rooms` | Room code, name, lifecycle status, host participant, and active item |
+| `participants` | Room membership, role, opaque session token, and presence |
+| `auctionitems` | Catalog entries, current/highest bid, winner, and item status |
+| `bids` | Accepted bid history for an item |
 
-### Participant
-* `roomId`: ObjectId (ref `Room`)
-* `username`: String (Unique per room via compound unique index `{ roomId: 1, username: 1 }`)
-* `role`: String (`'admin' | 'participant'`)
-* `sessionToken`: String (UUID, unique index)
-* `isConnected`: Boolean (default false)
+## Realtime events
 
-### AuctionItem
-* `roomId`: ObjectId (ref `Room`)
-* `name`: String
-* `description`: String (optional)
-* `startingBid`: Number (strictly positive)
-* `currentBid`: Number (defaults to starting price)
-* `highestBidderId`: ObjectId (ref `Participant`, default null)
-* `highestBidderUsername`: String (default null)
-* `status`: String (`'pending' | 'active' | 'sold' | 'unsold'`)
+| Direction | Event | Purpose |
+| --- | --- | --- |
+| Client → server | `room:connect` | Join the room channel and request a fresh state snapshot |
+| Client → server | `auction:start` | Host starts the auction and activates the first pending item |
+| Client → server | `bid:place` | Bidder submits a bid amount for server validation |
+| Client → server | `item:sell`, `item:unsold` | Host resolves the active item |
+| Server → client | `room:state` | Fresh room, participant, active-item, and bid snapshot |
+| Server → client | `participant:joined`, `participant:left` | Presence changes |
+| Server → client | `item:added` | A host-added catalog item |
+| Server → client | `auction:started`, `item:activated` | Auction and active-item transitions |
+| Server → client | `bid:accepted`, `bid:rejected` | Accepted room-wide update or private validation error |
+| Server → client | `item:ended`, `auction:completed` | Resolution and completion updates |
 
-### Bid
-* `roomId`: ObjectId (ref `Room`)
-* `itemId`: ObjectId (ref `AuctionItem`)
-* `participantId`: ObjectId (ref `Participant`)
-* `username`: String
-* `amount`: Number (strictly positive)
+## Run locally
 
----
+Prerequisites: Node.js 18+ and a MongoDB database (local MongoDB or Atlas).
 
-## 5. Socket.IO Event Registry
+1. Configure the backend. Copy `backend/.env.example` to `backend/.env`, then set `MONGODB_URI` if you are not using the local default. For a production deployment, also set a long random `JWT_SECRET`; do not commit this file.
 
-### Client → Server
-* `room:connect`: Registers presence status, joins the client to the virtual Socket room, and triggers initial state recovery (`room:state`).
-* `auction:start`: Sent by the room host to start the auction (takes room from `lobby` to `live` and activates the first item).
-* `bid:place`: Sent by a bidder to place a bid on the active item (payload: `{ amount }`).
-* `item:sell`: Sent by the host to mark the active item as sold.
-* `item:unsold`: Sent by the host to resolve the active item as unsold.
+2. Configure the frontend. Copy `frontend/.env.example` to `frontend/.env`. `VITE_API_URL` may be either the backend origin (`http://localhost:3001`) or its `/api` URL; the client normalizes both forms.
 
-### Server → Client
-* `room:state`: Emitted upon connection. Returns `room`, `participants`, `activeItem`, and `bids` history logs.
-* `participant:joined` / `participant:left`: Broadcasts presence update notifications.
-* `auction:started`: Notifies clients that the auction is live, prompting automatic route transitions.
-* `item:activated`: Notifies clients that a new item is open for bidding.
-* `bid:accepted` / `bid:rejected`: Emits bid responses. `accepted` goes to everyone to sync highest bid; `rejected` goes only to the placing client.
-* `item:ended`: Broadcasts the resolution of the item (sold/unsold).
-* `auction:completed`: Broadcasts that the room is resolved, triggering redirect to results screen.
+3. Start the backend:
 
----
-
-## 6. Local Setup
-
-### Prerequisites
-* Node.js (v18+)
-* MongoDB Compass or active MongoDB Atlas URI
-
-### Installation & Run
-
-1. **Clone the Repository** and open it in your terminal.
-2. **Setup Environment Variables**:
-   * Copy the root `.env.example` to `backend/.env` and edit `MONGODB_URI` to point to your database.
-   * Copy `.env.example` to `frontend/.env` (Vite parses frontend environment files).
-3. **Run Backend**:
    ```bash
    cd backend
    npm install
-   npm run build
-   npm start
+   npm run dev
    ```
-4. **Run Frontend**:
+
+4. In another terminal, start the frontend:
+
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
-5. **Open Browser**: Navigate to `http://localhost:5173`.
 
----
+5. Visit `http://localhost:5173`.
 
-## 7. Hosting & Deployment Guidelines
+## Test the realtime flow
 
-This project is a monorepo containing distinct `backend` and `frontend` folders:
+1. In browser A, create a room and register at least two items.
+2. In browser B (a separate profile or incognito window), sign in with another alias and join using the room code.
+3. Confirm both lobbies show the same catalog and participant presence.
+4. Start the auction in browser A. Both clients should enter the live auction, see the same active item, and receive each accepted bid immediately.
+5. Resolve each item as sold or unsold. Both clients should land on the final results page without refreshing.
 
-### Backend (Render Web Service)
-* **Root Directory**: `backend`
-* **Build Command**: `npm install && npm run build`
-* **Start Command**: `node server.js`
-* **Environment Variables**:
-  * `NODE_ENV`: `production`
-  * `MONGODB_URI`: (Your MongoDB Atlas connection string)
-  * `CLIENT_URL`: `https://auction-assignment.vercel.app` (Your Vercel URL)
-  * `JWT_SECRET`: (Your custom secure cookie secret)
+For concurrent-bid testing, submit different higher bids from two bidder sessions at nearly the same time and confirm that the final amount and winner always equal the highest accepted bid.
 
-### Frontend (Vercel Web App)
-* **Framework Preset**: `Vite`
-* **Root Directory**: `frontend`
-* **Build Command**: `npm run build`
-* **Output Directory**: `dist`
-* **Install Command**: `npm install`
-* **Environment Variables**:
-  * `VITE_API_URL`: `https://auction-assignment-backend.onrender.com/api` (Your Render backend endpoint)
+## Deployment configuration
 
----
+Deploy `frontend/` as a Vite static site and `backend/` as a Node web service. The frontend must point `VITE_API_URL` to the deployed backend, and the backend's `CLIENT_URL` must exactly match the deployed frontend origin. Configure these values privately in the hosting provider:
 
-## 8. AI Usage Notes
+| Service | Required configuration |
+| --- | --- |
+| Backend | `NODE_ENV=production`, `MONGODB_URI`, `CLIENT_URL`, `JWT_SECRET` |
+| Frontend | `VITE_API_URL` |
 
-This application was engineered iteratively under **Planning Mode** using **Google DeepMind's Advanced Agentic Coding assistant, Antigravity**. Brief logs, prompts, and summary files outlining core design decisions are located in the `ai-transcripts/` directory.
+Build the backend with `npm run build` and start it with `npm start`. Build the frontend with `npm run build`; its output directory is `dist`.
+
+No database connection strings, JWT secrets, or private backend URLs are stored in this README.
+
+## AI usage
+
+The project includes the requested AI evidence in [`ai-transcripts/`](ai-transcripts/):
+
+- `chatgpt-session-1.md` — architecture and milestone prompts
+- `cursor-session.md` — scaffold and implementation planning
+- `antigravity-session-1.md` — implementation and debugging sessions
+- `ai-usage-summary.md` — tools used, manual decisions, and known limitations
+
+## Current limitations
+
+- Bidders do not have budgets or account balances.
+- This is a small single-service implementation. A multi-instance deployment would need a shared Socket.IO adapter and distributed timer coordination.

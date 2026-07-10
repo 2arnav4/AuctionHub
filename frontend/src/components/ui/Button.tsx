@@ -51,7 +51,7 @@ export function Button({
     );
   }
 
-  const { to: _, ...buttonProps } = props as ButtonAsButton;
+  const buttonProps = props as ButtonAsButton;
 
   return (
     <button className={styles} {...buttonProps}>

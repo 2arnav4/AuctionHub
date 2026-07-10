@@ -18,6 +18,7 @@ import { useSessionStore } from "../stores/useSessionStore";
 import { useSocket } from "../hooks/useSocket";
 import { addAuctionItem } from "../services/api";
 import { getSocket } from "../services/socket";
+import { getErrorMessage } from "../utils/error";
 
 export function LobbyPage() {
   const { code } = useParams<{ code: string }>();
@@ -103,8 +104,8 @@ export function LobbyPage() {
       setItemBid("");
       setItemSuccess(true);
       setTimeout(() => setItemSuccess(false), 3000);
-    } catch (err: any) {
-      setItemError(err.message ?? "Failed to add item.");
+    } catch (err: unknown) {
+      setItemError(getErrorMessage(err, "Failed to add item."));
     } finally {
       setItemLoading(false);
     }

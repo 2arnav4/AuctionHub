@@ -7,13 +7,14 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Button } from "../components/ui/Button";
 import { createRoom } from "../services/api";
 import { useSessionStore } from "../stores/useSessionStore";
+import { getErrorMessage } from "../utils/error";
 
 export function CreateRoomPage() {
   const navigate = useNavigate();
   const authUser = useSessionStore((state) => state.authUser);
   const setSession = useSessionStore((state) => state.setSession);
 
-  const [username, setUsername] = useState(authUser?.username || "");
+  const username = authUser?.username ?? "";
   const [roomName, setRoomName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +22,6 @@ export function CreateRoomPage() {
   useEffect(() => {
     if (!authUser) {
       navigate("/");
-    } else {
-      setUsername(authUser.username);
     }
   }, [authUser, navigate]);
 
@@ -46,8 +45,8 @@ export function CreateRoomPage() {
         role: data.participant.role,
       });
       navigate(`/lobby/${data.room.code}`);
-    } catch (err: any) {
-      setError(err.message ?? "Something went wrong while creating the room.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Something went wrong while creating the room."));
     } finally {
       setLoading(false);
     }

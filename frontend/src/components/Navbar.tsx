@@ -6,6 +6,7 @@ import { logout } from "../services/api";
 export function Navbar() {
   const navigate = useNavigate();
   const authUser = useSessionStore((state) => state.authUser);
+  const roomRole = useSessionStore((state) => state.role);
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
   const clearSession = useSessionStore((state) => state.clearSession);
 
@@ -36,7 +37,7 @@ export function Navbar() {
               <User className="h-3 w-3 text-accent" />
               <span>{authUser.username}</span>
               <span className="text-[10px] text-text-muted capitalize">
-                ({authUser.role === "admin" ? "Host" : "Bidder"})
+                ({roomRole === "admin" ? "Host" : roomRole === "participant" ? "Bidder" : authUser.role === "admin" ? "Host" : "Bidder"})
               </span>
             </span>
 
