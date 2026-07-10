@@ -55,3 +55,21 @@ export async function getRoomHandler(
     next(error);
   }
 }
+
+/**
+ * Handles fetching results for a room.
+ * GET /api/rooms/:code/results
+ */
+export async function getRoomResultsHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const code = req.params.code as string;
+    const results = await roomService.getRoomResults(code);
+    res.status(200).json(results);
+  } catch (error) {
+    next(error);
+  }
+}

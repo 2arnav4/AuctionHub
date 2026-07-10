@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Room } from "../models/room.model.js";
 import { Participant } from "../models/participant.model.js";
+import { AuctionItem } from "../models/item.model.js";
 import { generateUniqueRoomCode } from "../utils/codeGenerator.js";
 import { AppError } from "../middleware/errorHandler.js";
 
@@ -111,4 +112,27 @@ export async function getRoomByCode(code: string) {
   }
 
   return room;
+}
+
+/**
+ * Retrieves resolved auction items (sold/unsold) for results presentation.
+ */
+export async function getRoomResults(code: string) {
+  if (!code?.trim()) {
+    throw new AppError("Room code is required", 400);
+  }
+
+  const normalizedCode = code.trim().toUpperCase();
+  const room = await Room.findOne({ code: normalizedCode });
+  if (!room) {
+    throw new AppError("Room not found", 404);
+  }
+
+  // Retrieve items that are resolved (sold or unsold)
+  const items = await AuctionItem.find({
+    roomId: room._id,
+    status: { $in: ["sold", "unsold"] },
+  }).sort({ updatedAt: 1 });
+
+  return items;
 }

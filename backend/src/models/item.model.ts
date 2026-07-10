@@ -5,6 +5,9 @@ export interface IAuctionItem extends Document {
   name: string;
   description?: string;
   startingBid: number;
+  currentBid: number;
+  highestBidderId?: mongoose.Types.ObjectId | null;
+  highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
   createdAt: Date;
   updatedAt: Date;
@@ -31,6 +34,20 @@ const AuctionItemSchema = new Schema<IAuctionItem>(
       type: Number,
       required: true,
       min: [0.01, "Starting bid must be positive."],
+    },
+    currentBid: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    highestBidderId: {
+      type: Schema.Types.ObjectId,
+      ref: "Participant",
+      default: null,
+    },
+    highestBidderUsername: {
+      type: String,
+      default: null,
     },
     status: {
       type: String,

@@ -58,6 +58,7 @@ export async function createAuctionItem(
     name: name.trim(),
     description: description?.trim() || "",
     startingBid,
+    currentBid: startingBid,
     status: "pending",
   });
   await newItem.save();
