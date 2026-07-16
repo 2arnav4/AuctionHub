@@ -1,225 +1,185 @@
-# Mini Realtime Auction Room
+# Realtime Auction Rooms
 
-A full-stack, server-authoritative auction application (Assignment Option 3). Hosts create a room and prepare its catalog; bidders join with a room code, receive catalog and auction updates through Socket.IO, and place bids on the active item. MongoDB is the durable source of truth, so a reload recovers the current room state.
+Realtime Auction Rooms is a full-stack, server-authoritative auction platform. It enables hosts to spin up private bidding rooms, configure item catalogs, and manage live auctions, while participants join and submit concurrent bids with sub-second feedback. 
 
-## Live Demo
+The platform utilizes a reactive state model with Socket.IO communication, backed by MongoDB for server-authoritative concurrency and crash recovery.
 
-[auction-assignment.vercel.app](https://auction-assignment.vercel.app/)
+---
 
-> [!NOTE]
-> The backend server is hosted on Render (free tier), so the initial load may take 1-2 minutes to spin up the container if it has gone to sleep.
+## Key Features
 
-> Before submitting, confirm the backend host is awake and reachable from the deployed frontend (see [Known Limitations](#known-limitations) — free-tier hosts can cold-sleep).
+- **Dynamic Room Management**: Instantly create and join auction rooms using secure room codes.
+- **Server-Authoritative Concurrency**: Leverages atomic MongoDB updates (`findOneAndUpdate`) to prevent race conditions from concurrent bidders.
+- **Synced Countdown Engine**: Server-owned auction timers are persisted as absolute deadlines, enabling mid-auction server restarts to recover and resume timers without loss of time.
+- **Real-Time Presence Tracking**: Dynamic online/offline presence indicators for all participants.
+- **Comprehensive Bid Logs**: Live bid histories updated in real time for all participants.
+- **Instant Item Resolution**: Supports manual resolutions (Sell/Mark Unsold) by the host, as well as auto-sell on timer expiration.
+- **Analytical Results Dashboard**: Displays final auction summaries, sales records, and bid logs upon auction completion.
 
-## Demo Credentials
-
-| Account     | Username  | Password      | Notes                                                                          |
-| ----------- | --------- | ------------- | ------------------------------------------------------------------------------ |
-| Host demo   | `admin`   | `password123` | Global login only; room role is still decided by create/join, not this account |
-| Bidder demo | `demo`    | `password123` | One-click button on the login screen                                           |
-| Guest       | any alias | _(none)_      | Public demo mode — any non-reserved username logs in without a password        |
-
-Room-level role (host vs. bidder) is assigned by the server based on whether you **create** or **join** a room — not by which demo account you log in with. Log in once, then create one room and join it again from a second browser profile/incognito window with a different alias to see both roles.
+---
 
 ## Tech Stack
 
-- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Zustand
-- **Backend:** Node.js, Express 5, TypeScript, Mongoose
-- **Realtime:** Socket.IO
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Zustand, Socket.IO Client
+- **Backend:** Node.js, Express 5, TypeScript, Mongoose, Socket.IO
 - **Database:** MongoDB
+- **Testing:** Node.js Native Test Runner
 
-## Features
+---
 
-### Core features (required by the assignment) — all present
+## Architecture Overview
 
-| Requirement                  | Status | Where                                                          |
-| ---------------------------- | ------ | -------------------------------------------------------------- |
-| Create auction room          | ✅     | `POST /api/rooms` → `room.service.createRoom`                  |
-| Join room by code/link       | ✅     | `POST /api/rooms/:code/join`                                   |
-| Admin and participant roles  | ✅     | Server-assigned on create/join, never client-supplied          |
-| Item/player list             | ✅     | `AuctionItem` model + lobby catalog UI                         |
-| Start auction                | ✅     | `auction:start` socket event, admin-only                       |
-| Current item/player display  | ✅     | `item:activated` broadcast + auction page                      |
-| Countdown timer              | ✅     | Server-owned `setTimeout` per room, restored on server restart |
-| Realtime bidding             | ✅     | `bid:place` → atomic conditional update                        |
-| Bid history                  | ✅     | `Bid` collection, live list on the auction page                |
-| Sold/unsold outcome          | ✅     | `item:sell` / `item:unsold` + automatic timer expiry           |
-| Final results page           | ✅     | `/results/:code`, auto-navigated to on completion              |
-| Basic room state persistence | ✅     | MongoDB-backed; `room:connect` rehydrates state on reload      |
-
-Auction flow matches the expected `LOBBY -> AUCTION -> COMPLETED` states, and the realtime minimums (live bids, live active item, synced timer, results without refresh) are all implemented — see [Realtime Design](#realtime-design).
-
-### Optional features — implemented
-
-- **Presence indicators** — connected/offline badges per participant, tracked per-socket so multiple tabs under one login don't falsely show "offline".
-
-### Optional features — not implemented (acceptable; these were explicitly optional)
-
-- Skip/withdraw voting
-- Team/squad budgets or spending caps
-- Maximum items per user / role caps
-- Chat/reactions
-- Public/private rooms
-- Auction pause/resume
-- Spectator mode
-
-None of these are required by the brief. They're listed here so it's clear they were a deliberate scope cut, not an oversight, and they're the natural next additions — see [Future Improvements](#future-improvements).
-
-## Architecture
+The system uses a decoupled client-server architecture. All state transitions are validated on the backend and broadcasted to connected clients.
 
 ```mermaid
 flowchart LR
-  C["React client"] -->|"REST: login, create/join, catalog, results"| A["Express API"]
-  C -->|"Socket.IO: presence, lifecycle, bidding"| S["Socket.IO server"]
-  A --> D[("MongoDB")]
-  S --> D
-  S -->|"room-scoped broadcasts"| C
+  Client["React Frontend"] <-->|"HTTP & WebSockets"| Server["Node.js / Express Server"]
+  Server <-->|"Mongoose ODM"| Database[("MongoDB")]
 ```
 
-- REST creates durable data and returns a per-room `sessionToken` after a room is created or joined.
-- A separate, short-lived JWT cookie (`/api/auth/login`) tracks global "who is logged in" identity across the site; it does **not** decide room permissions. Room role (`admin`/`participant`) is always assigned server-side by `room.service.ts` based on whether the request created or joined the room.
-- Socket.IO authenticates the per-room `sessionToken` during its handshake, joins the client to `room:{code}`, and broadcasts room events only to that room.
-- The server validates host permissions, item status, and bid amounts before persisting changes and broadcasting them.
-- The browser persists its current room session with Zustand (`localStorage`). This is convenience state for reconnect, not the authoritative auction state — the server always rehydrates from MongoDB on `room:connect`.
+For a detailed walkthrough of the concurrency controls, socket lifecycles, and database schemas, see [ARCHITECTURE.md](file:///Users/arnavsingla/Desktop/Intern%20assignments/11-Auction-Assignment/Mini%20Realtime%20Auction%20Room/ARCHITECTURE.md).
 
-## Realtime Design
+---
 
-### Events
+## Folder Structure
 
-| Direction       | Event                                    | Purpose                                                      |
-| --------------- | ---------------------------------------- | ------------------------------------------------------------ |
-| Client → server | `room:connect`                           | Join the room channel and request a fresh state snapshot     |
-| Client → server | `auction:start`                          | Host starts the auction and activates the first pending item |
-| Client → server | `bid:place`                              | Bidder submits a bid amount for server validation            |
-| Client → server | `item:sell`, `item:unsold`               | Host resolves the active item                                |
-| Server → client | `room:state`                             | Fresh room, participant, active-item, and bid snapshot       |
-| Server → client | `participant:joined`, `participant:left` | Presence changes                                             |
-| Server → client | `item:added`                             | A host-added catalog item                                    |
-| Server → client | `auction:started`, `item:activated`      | Auction and active-item transitions                          |
-| Server → client | `bid:accepted`, `bid:rejected`           | Accepted room-wide update or private validation error        |
-| Server → client | `item:ended`, `auction:completed`        | Resolution and completion updates                            |
+```
+├── backend
+│   ├── src
+│   │   ├── config          # Database, CORS, and Environment variables configuration
+│   │   ├── controllers     # HTTP controllers handling auth, items, and rooms
+│   │   ├── models          # MongoDB schemas (Bid, Item, Participant, Room, User)
+│   │   ├── middleware      # Auth checks, error handling
+│   │   ├── routes          # REST API endpoints
+│   │   ├── services        # Core business logic (rooms, items)
+│   │   ├── socket          # Socket.IO connections, handlers, and middlewares
+│   │   └── utils           # Helper functions & test suites
+│   └── package.json
+└── frontend
+    ├── src
+    │   ├── app             # Router, providers, and layout setups
+    │   ├── components      # Shared UI elements & Design layout
+    │   ├── features        # Feature modules (Lobby, Auth, Auction, Results)
+    │   ├── pages           # Router page templates
+    │   ├── services        # API Client and WebSocket wrappers
+    │   └── stores          # Zustand client-side state stores
+    └── package.json
+```
 
-### Concurrency handling (the part the assignment weighs most heavily)
-
-- **Bids** are accepted with a single conditional Mongo update: `findOneAndUpdate({ _id, status: "active", endsAt: { $gt: now }, currentBid: { $lt: amount } }, ...)`. Two bidders racing on the same amount can only ever have one `findOneAndUpdate` match; the loser is rejected with the real current price, not a stale one.
-- **Item resolution** (sell/unsold/expiry) uses the same pattern: `findOneAndUpdate({ _id, status: "active" }, ...)`. Whether the resolution is triggered by the host clicking "Sell", the host clicking "Mark Unsold", or the server's own timer firing, only one of those can win if they land at the same moment — the others no-op instead of double-resolving or double-advancing the catalog.
-- **The countdown is server-owned**, not client-owned: the server schedules a `setTimeout` per live room and stamps an absolute `endsAt` that all clients render from. On server restart, `restoreAuctionTimers()` reloads all `live` rooms from MongoDB and re-arms timers from the persisted `endsAt`, so a restart mid-auction doesn't lose the deadline.
-- **Bid validation is entirely server-side** — clients only ever emit an intent (`bid:place`, `item:sell`, …) and the server decides.
-
-## Database Schema
-
-| Collection     | Purpose                                               | Key fields                                                                                                        |
-| -------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `rooms`        | Room code, name, lifecycle status, host, active item  | `code`, `status` (`lobby`/`live`/`completed`), `adminParticipantId`, `currentItemId`, `endsAt`                    |
-| `participants` | Room membership, role, opaque session token, presence | `roomId`, `username`, `usernameNormalized`, `role`, `sessionToken`, `isConnected`                                 |
-| `auctionitems` | Catalog entries, current/highest bid, winner, status  | `roomId`, `startingBid`, `currentBid`, `highestBidderId`, `status` (`pending`/`active`/`sold`/`unsold`), `endsAt` |
-| `bids`         | Accepted bid history for an item                      | `roomId`, `itemId`, `participantId`, `username`, `amount`                                                         |
-
-`participants` has a compound unique index on `{ roomId, usernameNormalized }` so the same alias can be reused across different rooms but not twice in the same room.
-
-## AI Usage
-
-Tools used, prompts, and transcripts are in [`ai-transcripts/`](ai-transcripts/):
-
-- `chatgpt-session-1.md` — architecture and milestone prompts
-- `cursor-session.md` — scaffold and implementation planning
-- `antigravity-session-1.md` — implementation and debugging sessions
-- `ai-usage-summary.md` — tools used, manual decisions, and known limitations
-
-**Note:** if `ai-usage-summary.md` still lists timer/countdown autonomy as a future limitation, that line is stale — it was written before the authoritative-timer commit (`feat(auction): add authoritative timers and atomic bid handling`) landed. Update that file's "Known Limitations" section to match the current backend before submitting, so the transcript doesn't contradict the shipped code (see [Review Notes](#review-notes-before-you-submit)).
+---
 
 ## Running Locally
 
-Prerequisites: Node.js 18+ and a MongoDB database (local MongoDB or Atlas).
+### Prerequisites
 
-1. Configure the backend. Copy `backend/.env.example` to `backend/.env`, then set `MONGODB_URI` if you are not using the local default. For a production deployment, also set a long random `JWT_SECRET`; do not commit this file.
-2. Configure the frontend. Copy `frontend/.env.example` to `frontend/.env`. `VITE_API_URL` may be either the backend origin (`http://localhost:3001`) or its `/api` URL; the client normalizes both forms.
-3. Start the backend:
+- **Node.js** 18+
+- **MongoDB** (Local instance or MongoDB Atlas Connection String)
 
+### Step 1: Clone and Configure Backend
+
+1. Navigate to the backend directory:
    ```bash
    cd backend
+   ```
+2. Install dependencies:
+   ```bash
    npm install
-   npm run dev
+   ```
+3. Copy environment template and configure:
+   ```bash
+   cp .env.example .env
+   ```
+   Modify `.env` to include your MongoDB URI and set a secure `JWT_SECRET` for production:
+   ```env
+   PORT=3001
+   MONGODB_URI=mongodb://localhost:27017/auction-room
+   JWT_SECRET=your_jwt_secret_here
    ```
 
-4. In another terminal, start the frontend:
+### Step 2: Configure Frontend
 
+1. Navigate to the frontend directory:
+   ```bash
+   cd ../frontend
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Copy environment template:
+   ```bash
+   cp .env.example .env
+   ```
+   Ensure the API URL matches your running backend:
+   ```env
+   VITE_API_URL=http://localhost:3001
+   ```
+
+### Step 3: Run the Services
+
+1. **Start the Backend server** (runs on port 3001 by default):
+   ```bash
+   cd backend
+   # Starts in watch mode
+   npm run dev
+   ```
+2. **Start the Frontend development server** (runs on port 5173 by default):
    ```bash
    cd frontend
-   npm install
    npm run dev
    ```
+3. Open `http://localhost:5173` in your browser.
 
-5. Visit `http://localhost:5173`.
+---
 
-### Test the realtime flow
+## Demo & Testing Guide
 
-1. In browser A, log in and create a room, then register at least two items.
-2. In browser B (a separate profile or incognito window), log in with another alias and join using the room code.
-3. Confirm both lobbies show the same catalog and participant presence.
-4. Start the auction in browser A. Both clients should enter the live auction, see the same active item and countdown, and receive each accepted bid immediately.
-5. Resolve each item as sold or unsold (or let the timer expire). Both clients should land on the final results page without refreshing.
+For quick testing, you can use the built-in demo credentials on the login screen or register an anonymous alias (guest mode).
 
-For concurrent-bid testing, submit different higher bids from two bidder sessions at nearly the same time and confirm the final amount and winner always equal the highest accepted bid.
+### Testing the Concurrent Auction Lifecycle
 
-### Automated tests
+1. **Setup Catalog**: Log in as Host A, create a room, and add at least two items to the catalog.
+2. **Join Bidders**: Open an Incognito Window or separate browser profile, register a bidder alias, and join using the room code generated by Host A.
+3. **Launch Auction**: Host A clicks **Start Live Auction**. Both screens will synchronize and transition into the Live Auction Dashboard.
+4. **Place Bids**: Submit bids from multiple tabs simultaneously. Verify that only higher bids are accepted, and lower or concurrent slower bids are rejected atomically with real-time feedback.
+5. **Item Completion**: When the timer expires or the host resolves the item, the system automatically loads the next item in the catalog.
+6. **Results**: Once all items are resolved, all connected clients navigate automatically to the final results screen.
 
-```bash
-cd backend
-npm test
-```
+---
 
-Runs `backend/src/utils/auction.test.ts` — unit coverage for bid-amount validation, expiry timing, and sold/unsold resolution logic. There is no integration/socket test suite; concurrency correctness is verified manually per the steps above (see [Known Limitations](#known-limitations)).
+## API Documentation
 
-## Environment Variables
+### Authentication Endpoints
 
-| Service  | Variable                        | Required                   | Notes                                                            |
-| -------- | ------------------------------- | -------------------------- | ---------------------------------------------------------------- |
-| Backend  | `PORT`                          | No (default `3001`)        |                                                                  |
-| Backend  | `NODE_ENV`                      | No (default `development`) | Set `production` on deploy                                       |
-| Backend  | `CLIENT_URL`                    | Yes in production          | Must exactly match the deployed frontend origin (CORS)           |
-| Backend  | `MONGODB_URI`                   | Yes                        | Local MongoDB or Atlas connection string                         |
-| Backend  | `AUCTION_ITEM_DURATION_SECONDS` | No (default `30`)          | Countdown length per item                                        |
-| Backend  | `JWT_SECRET`                    | Yes in production          | Long random value; app refuses to start in production without it |
-| Frontend | `VITE_API_URL`                  | Yes                        | Backend origin or `/api` URL — the client normalizes both        |
+- `POST /api/auth/register` - Create a new user account.
+- `POST /api/auth/login` - Authenticate and obtain JWT cookie.
+- `POST /api/auth/logout` - Clear user authentication cookie.
+- `GET /api/auth/me` - Get the current authenticated user context.
 
-No database connection strings, JWT secrets, or private backend URLs are stored in this README. See `backend/.env.example` and `frontend/.env.example`.
+### Room Endpoints
 
-Deploy `frontend/` as a Vite static site (Vercel config already included) and `backend/` as a Node web service. Build the backend with `npm run build` and start it with `npm start`. Build the frontend with `npm run build`; its output directory is `dist`.
+- `POST /api/rooms` - Create a new auction room.
+- `POST /api/rooms/:code/join` - Join an existing room with a code and alias.
+- `GET /api/rooms/:code/summary` - Get details of an active room.
+- `GET /api/rooms/:code/results` - Fetch final results of a completed room auction.
 
-## Assumptions and Trade-offs
+### Item Endpoints
 
-- A room has one host and one active item at a time; the host is a non-bidding auctioneer role and cannot place bids.
-- Bids are whole rupees and must exceed the current bid by at least ₹1.
-- Usernames are unique within a room (case-insensitive); reusing the same alias across rooms is fine, use different aliases for a realistic multi-user test in one browser.
-- The login-level JWT identity (`admin`/`demo`/guest) only decides display defaults before you've joined a room; actual host/bidder permissions are decided per-room by the server at create/join time and cannot be spoofed by the client.
-- The server owns the countdown. Its 30-second default is configurable through `AUCTION_ITEM_DURATION_SECONDS`; expiry sells an item with a highest bidder and otherwise marks it unsold.
-- Single-process deployment: timers and Socket.IO state live in one Node process's memory. Horizontal scaling is out of scope (see below).
+- `POST /api/items` - Add a new item to a room's catalog.
+- `GET /api/items/room/:roomId` - Retrieve catalog items for a room.
 
-## Known Limitations
+---
 
-- **Bidders have no budgets or spend caps** — infinite virtual funds, by design for this scope.
-- **Single-instance realtime** — a multi-instance deployment would need a shared Socket.IO adapter (e.g. Redis) and distributed timer coordination; the in-memory `Map` of per-room timers in `resolution.handler.ts` only works for one process.
-- **No host handoff** — if the host disconnects mid-auction, nobody can manually sell/mark-unsold until they return, though the server-owned timer still resolves the item automatically on expiry either way.
-- **No integration/socket test suite** — concurrency correctness (atomic bid/resolution updates) is verified manually rather than with an automated multi-client test.
-- **Free-tier host cold starts** — if the backend is deployed on a free tier that sleeps, the first realtime connection after idle time may take a few seconds; confirm this is acceptable for a live demo.
+## Future Roadmap
 
-## Future Improvements
+- **Team Bidding Budgets**: Group budgets and spend caps for collaborative bidding structures.
+- **Live Chat & Reactions**: Enhance bidder engagement with interactive channels on the auction page.
+- **Horizontal Scaling**: Transition the WebSocket layer to a Redis-backed Socket.IO adapter for multi-instance load balancing.
+- **Bidding Pause/Resume Controls**: Empower hosts to pause and resume active countdowns.
+- **Spectator Support**: Allow read-only viewer roles to follow live auctions without participating.
 
-- Team/squad budgets with spend validation against remaining balance.
-- Host pause/resume control over the active item's countdown.
-- Chat/reactions panel alongside the live bid log.
-- Spectator (view-only, non-bidding) links separate from participant join links.
-- Redis-backed Socket.IO adapter for multi-instance deployment.
+---
 
-## Review Notes (before you submit)
+## License
 
-Housekeeping found during a pre-submission review — all items below have been fixed in the codebase:
-
-- **Dead route (fixed):** `frontend/src/features/lobby/RoomPage.tsx` was a leftover placeholder mounted at `/room/:code`. Nothing linked to it — `LobbyPage` (`/lobby/:code`) is the real lobby. The file and the route have been removed.
-- **Duplicate auth check on load (fixed):** `AuthInitializer` (wraps the whole app) and `Layout` (mounted inside it) both called `checkAuth()` independently on mount, firing `/api/auth/me` twice on every page load. `Layout` no longer duplicates this — `AuthInitializer` is the single source of truth for auth state.
-- **Unused scaffold folders (fixed):** `backend/src/repositories/` and `backend/src/runtime/` were empty (`.gitkeep` only) — leftovers from an initial layered-architecture plan the final implementation didn't use (services call Mongoose models directly, which is a reasonable choice at this scale). Removed.
-- **Stale AI transcript claim (fixed):** `ai-transcripts/ai-usage-summary.md`'s "Known Limitations" section said timer autonomy and server-side countdown resolution were future work — they'd since shipped (`resolution.handler.ts`). The summary now has a follow-up note explaining that the authoritative timer was added in a later session, so it no longer contradicts the shipped code.
-- **Inconsistent auth pattern (fixed):** room routes used the `optionalAuth` Express middleware to populate `req.user`, while `item.routes.ts` read the session token straight out of headers inside the controller. Added a matching `extractSessionToken` middleware (`backend/src/middleware/auth.middleware.ts`) so item routes follow the same middleware-populates-`req`, controller-stays-thin pattern as every other route. No behavior change — the service layer still does the real lookup and role check.
-
-Everything else checked — bid concurrency, room lifecycle, timer restoration on restart, role assignment, presence tracking, loading/empty/error states — matched the assignment brief with no correctness issues found. Both `backend` and `frontend` were rebuilt (`npm run build`) and the backend unit test suite (`npm test`) was re-run after these fixes; all green.
+This project is licensed under the MIT License.

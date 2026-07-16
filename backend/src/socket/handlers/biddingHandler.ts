@@ -83,7 +83,7 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 4. Persist a candidate bid before atomically claiming the new highest amount.
+      // 4. Create and save the new bid before atomically claiming the new highest amount.
       const newBid = new Bid({
         roomId: room._id,
         itemId: activeItem._id,
