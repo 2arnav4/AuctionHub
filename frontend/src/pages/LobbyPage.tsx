@@ -406,7 +406,9 @@ export function LobbyPage() {
                 Add Auction Item
               </span>
 
-              <form onSubmit={handleAddItem} className="space-y-4">
+              {/* noValidate: native constraint tooltips are unstyled OS popups
+                  that clash with the dark UI. Validation is handled below. */}
+              <form onSubmit={handleAddItem} className="space-y-4" noValidate>
                 {itemError && (
                   <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -427,7 +429,6 @@ export function LobbyPage() {
                   <input
                     id="itemName"
                     type="text"
-                    required
                     maxLength={ITEM_NAME_MAX_LENGTH}
                     placeholder="e.g. MS Dhoni Signed Bat"
                     value={itemName}
@@ -443,12 +444,13 @@ export function LobbyPage() {
                   </label>
                   <input
                     id="itemBid"
-                    type="number"
-                    required
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     placeholder="e.g. 500"
-                    min="1"
                     value={itemBid}
-                    onChange={(e) => setItemBid(e.target.value)}
+                    // Digits only, so a negative or malformed price cannot be typed.
+                    onChange={(e) => setItemBid(e.target.value.replace(/[^0-9]/g, ""))}
                     className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
                     disabled={itemLoading}
                   />

@@ -25,6 +25,18 @@ interface ToastMsg {
   type: "info" | "success" | "error";
 }
 
+/**
+ * A round raise that stays sensible across magnitudes: ₹100 steps on a ₹500
+ * item are useful, on a ₹40,00,000 item they are noise.
+ */
+function getBidStep(amount: number): number {
+  if (amount < 1_000) return 100;
+  if (amount < 10_000) return 500;
+  if (amount < 100_000) return 5_000;
+  if (amount < 1_000_000) return 25_000;
+  return 100_000;
+}
+
 export function AuctionPage() {
   // Room codes are stored uppercase, so a lowercase URL must not read as a
   // different room and lock out a session that is actually valid.
@@ -86,6 +98,16 @@ export function AuctionPage() {
       ? Math.max(0, Math.ceil((endsAtMs - (clockNow + serverClockOffset)) / 1000))
       : 0;
   const biddingOpen = Boolean(activeItem) && !isPaused && secondsRemaining > 0;
+
+  // Preset raises, so the common case is one tap rather than typing a number
+  // against a running clock.
+  const bidStep = getBidStep(minBidVal);
+  const quickBids = [
+    { label: "Minimum", amount: minBidVal },
+    { label: `+₹${bidStep.toLocaleString()}`, amount: minBidVal + bidStep },
+    { label: `+₹${(bidStep * 2).toLocaleString()}`, amount: minBidVal + bidStep * 2 },
+    { label: `+₹${(bidStep * 5).toLocaleString()}`, amount: minBidVal + bidStep * 5 },
+  ];
 
   useEffect(() => {
     if (!Number.isFinite(endsAtMs)) return;
@@ -171,10 +193,15 @@ export function AuctionPage() {
     e.preventDefault();
     if (!activeItem) return;
 
+    if (!bidVal.trim()) {
+      setLocalBidErr("Enter an amount, or tap one of the presets above.");
+      return;
+    }
+
     const bidAmount = Number(bidVal);
 
     if (!Number.isFinite(bidAmount) || bidAmount < minBidVal) {
-      setLocalBidErr(`Bid must be at least ₹${minBidVal.toLocaleString()}`);
+      setLocalBidErr(`Bid must be at least ₹${minBidVal.toLocaleString()}.`);
       return;
     }
 
@@ -430,29 +457,31 @@ export function AuctionPage() {
                   </div>
 
                   {/* Pricing Box */}
-                  <div className="grid grid-cols-2 gap-4 bg-surface-overlay/60 border border-border/50 p-4 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 bg-surface-overlay/60 border border-border/50 p-5 rounded-lg">
                     <div>
                       <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block">
                         Starting Price
                       </span>
-                      <span className="text-xl font-bold text-text-primary tracking-tight">
+                      <span className="text-2xl font-bold text-text-primary tracking-tight tabular-nums">
                         ₹{(activeItem.startingBid ?? 0).toLocaleString()}
                       </span>
                     </div>
                     <div className="border-l border-border/40 pl-4">
                       <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block">
-                        Highest Bid
+                        {highestBid ? "Highest Bid" : "No Bids Yet"}
                       </span>
-                      <span className="text-xl font-bold text-accent tracking-tight">
+                      <span className="text-3xl font-bold text-accent tracking-tight tabular-nums">
                         ₹{(highestBid ?? activeItem.startingBid ?? 0).toLocaleString()}
                       </span>
                       {activeItem.highestBidderUsername ? (
-                        <span className="text-[10px] font-medium text-green-400 block mt-0.5 truncate">
-                          by {activeItem.highestBidderUsername}
+                        <span className="text-[11px] font-semibold text-green-400 block mt-1 truncate">
+                          {activeItem.highestBidderUsername === sessionUsername
+                            ? "You are leading"
+                            : `Leading: ${activeItem.highestBidderUsername}`}
                         </span>
                       ) : (
-                        <span className="text-[10px] text-text-muted block mt-0.5">
-                          No bids placed
+                        <span className="text-[11px] text-text-muted block mt-1">
+                          Opens at the starting price
                         </span>
                       )}
                     </div>
@@ -481,7 +510,48 @@ export function AuctionPage() {
                   Place Bid
                 </span>
 
-                <form onSubmit={handleSubmitBid} className="space-y-4">
+                {/* noValidate: the browser's own tooltip for `min` is an
+                    unstyled native popup that appears on submit and cannot be
+                    themed. All validation is ours, rendered inline. */}
+                <form onSubmit={handleSubmitBid} className="space-y-4" noValidate>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                      Minimum bid
+                    </span>
+                    <span className="text-lg font-bold tabular-nums text-text-primary">
+                      ₹{minBidVal.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {quickBids.map((quick) => {
+                      const isSelected = bidVal === String(quick.amount);
+                      return (
+                        <button
+                          key={quick.label}
+                          type="button"
+                          onClick={() => {
+                            setBidVal(String(quick.amount));
+                            setLocalBidErr(null);
+                            setBidError(null);
+                          }}
+                          className={`flex flex-col items-center rounded-lg border px-2 py-2 transition-all cursor-pointer ${
+                            isSelected
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-border/60 bg-surface-overlay/50 text-text-secondary hover:border-accent/40 hover:bg-accent/5 hover:text-text-primary"
+                          }`}
+                        >
+                          <span className="text-[9px] font-medium uppercase tracking-wider opacity-70">
+                            {quick.label}
+                          </span>
+                          <span className="text-sm font-bold tabular-nums">
+                            ₹{quick.amount.toLocaleString()}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {(localBidErr || bidError) && (
                     <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
                       <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -493,16 +563,18 @@ export function AuctionPage() {
                     <div className="relative flex-1">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">₹</span>
                       <input
-                        type="number"
-                        required
-                        min={minBidVal}
-                        placeholder={`Min bid required: ₹${(minBidVal ?? 1).toLocaleString()}`}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder={`Or type an amount (min ₹${minBidVal.toLocaleString()})`}
                         value={bidVal}
                         onChange={(e) => {
-                          setBidVal(e.target.value);
+                          // Digits only. A minus sign can never reach state, so
+                          // a negative bid is unreachable rather than rejected.
+                          setBidVal(e.target.value.replace(/[^0-9]/g, ""));
                           setLocalBidErr(null);
                         }}
-                        className="w-full bg-surface-overlay border border-border/80 focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg pl-8 pr-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-all outline-none"
+                        className="w-full bg-surface-overlay border border-border/80 focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg pl-8 pr-4 py-2.5 text-sm tabular-nums text-text-primary placeholder:text-text-muted transition-all outline-none"
                       />
                     </div>
                     <Button type="submit" variant="primary" className="py-2.5 px-6 font-bold text-sm">
@@ -525,28 +597,56 @@ export function AuctionPage() {
               </span>
 
               {bids.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 space-y-1 text-text-muted">
-                  <DollarSign className="h-6 w-6 stroke-[1.5]" />
-                  <p className="text-xs">No bids logged yet</p>
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 space-y-1.5 text-text-muted">
+                  <DollarSign className="h-7 w-7 stroke-[1.5]" />
+                  <p className="text-xs font-medium">No bids on this item yet</p>
+                  <p className="text-[10px] leading-relaxed max-w-[190px]">
+                    The log resets for each item. Bids appear here the instant the server accepts them.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[220px] pr-1">
-                  {bids.map((b) => (
-                    <div
-                      key={b._id}
-                      className="flex items-center justify-between bg-surface-overlay/40 border border-border/30 px-3 py-2 rounded-lg text-xs"
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="h-5 w-5 rounded-full bg-accent/10 flex items-center justify-center font-bold text-[9px] text-accent shrink-0">
-                          {b.username.charAt(0).toUpperCase()}
+                <div className="space-y-2 flex-1 overflow-y-auto max-h-[320px] pr-1">
+                  {bids.map((b, index) => {
+                    const isLeading = index === 0;
+                    return (
+                      <div
+                        key={b._id}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-xs transition-colors ${
+                          isLeading
+                            ? "border-accent/40 bg-accent/10"
+                            : "border-border/30 bg-surface-overlay/40"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 overflow-hidden">
+                          <div
+                            className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                              isLeading ? "bg-accent text-white" : "bg-accent/10 text-accent"
+                            }`}
+                          >
+                            {b.username.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="font-semibold text-text-primary truncate leading-tight">
+                              {b.username}
+                              {b.username === sessionUsername && (
+                                <span className="ml-1 text-[9px] text-text-muted">(You)</span>
+                              )}
+                            </p>
+                            {isLeading && (
+                              <p className="text-[9px] font-medium uppercase tracking-wider text-accent">
+                                Leading
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="font-semibold text-text-primary truncate">{b.username}</span>
+                        <span
+                          className={`font-bold tabular-nums shrink-0 ${isLeading ? "text-accent text-sm" : "text-text-secondary"}`}
+                        >
+                          ₹{b.amount.toLocaleString()}
+                        </span>
                       </div>
-                      <span className="font-bold text-accent shrink-0">
-                        ₹{b.amount.toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -600,16 +700,28 @@ export function AuctionPage() {
                 Live Broadcasts
               </span>
 
-              <div className="h-32 overflow-y-auto space-y-2 text-[10px] text-text-muted pr-1">
+              <div className="h-64 overflow-y-auto space-y-1.5 pr-1">
                 {activityLogs.length === 0 ? (
-                  <p className="text-text-muted italic">Waiting for room activity...</p>
+                  <div className="flex h-full flex-col items-center justify-center text-center gap-1.5 text-text-muted">
+                    <MessageSquare className="h-6 w-6 stroke-[1.5]" />
+                    <p className="text-xs font-medium">Nothing has happened yet</p>
+                    <p className="text-[10px] max-w-[190px] leading-relaxed">
+                      Bids, item changes and results are announced here as they happen.
+                    </p>
+                  </div>
                 ) : (
-                  activityLogs.map((log, index) => {
+                  // Newest first: during a live auction the latest event is the
+                  // one that matters, and scrolling to find it wastes the clock.
+                  [...activityLogs].reverse().map((log, index) => {
                     const isSuccess = log.includes("✔");
                     return (
                       <p
-                        key={index}
-                        className={isSuccess ? "text-green-400" : "text-text-secondary font-medium"}
+                        key={activityLogs.length - index}
+                        className={`rounded-md px-2 py-1.5 text-[11px] leading-snug ${
+                          isSuccess
+                            ? "bg-green-500/5 text-green-400"
+                            : "bg-surface-overlay/40 text-text-secondary"
+                        }`}
                       >
                         {log}
                       </p>
