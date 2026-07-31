@@ -19,7 +19,7 @@ A server-authoritative live auction platform. A host creates a private room, pre
 |---|---|---|
 | Bidder | `demo` | `password123` |
 
-Signing in as `demo` issues a uniquely numbered alias (`demo_1`, `demo_2`, …) so the same credentials can be used simultaneously in several browser profiles. You can also register a normal account from the Sign Up tab.
+Signing in as `demo` issues a unique alias (`demo_a1b2c3`) so the same credentials can drive several browser profiles at once without colliding. You can also register a normal account from the Sign Up tab.
 
 Roles are per-room, not global: whoever creates a room is that room's host, and everyone who joins is a bidder. The same account can host one room and bid in another.
 
@@ -83,7 +83,7 @@ Built with AI assistance. Tooling, prompts, transcripts, and a breakdown of whic
 **Prerequisites:** Node.js 18+, and MongoDB running locally or an Atlas connection string.
 
 ```bash
-git clone https://github.com/2arnav4/Auction-Assignment.git
+git clone https://github.com/2arnav4/AuctionHub.git
 cd "Mini Realtime Auction Room"
 ```
 
@@ -156,9 +156,9 @@ All REST routes are mounted under `/api` and return JSON. Errors use `{ "error":
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/rooms` | Create a room. Returns the room, the host participant, and a `sessionToken`. |
-| `POST` | `/api/rooms/:code/join` | Join a room. Returns the room, the participant, and a `sessionToken`. |
-| `GET` | `/api/rooms/:code` | Room details by code. |
+| `POST` | `/api/rooms` | Create a room. **Requires auth.** The username comes from the cookie, not the body. Returns the room, the host participant, and a `sessionToken`. |
+| `POST` | `/api/rooms/:code/join` | Join a room. **Requires auth.** Returns the room, the participant, and a `sessionToken`. |
+| `GET` | `/api/rooms/:code` | Room details by code. Public. |
 | `GET` | `/api/rooms/:code/results` | Resolved items for a finished auction. |
 
 **Items**
