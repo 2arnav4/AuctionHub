@@ -5,6 +5,8 @@ export interface IUser extends Document {
   usernameNormalized: string;
   passwordHash: string;
   salt: string;
+  /** Stored per user so the work factor can be raised without invalidating existing passwords. */
+  hashIterations: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +32,12 @@ const UserSchema = new Schema<IUser>(
     salt: {
       type: String,
       required: true,
+    },
+    // Accounts created before this field existed were hashed at 1,000 rounds.
+    hashIterations: {
+      type: Number,
+      required: true,
+      default: 1_000,
     },
   },
   {

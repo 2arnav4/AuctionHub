@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { AppError } from "../middleware/errorHandler.js";
 import { env } from "../config/env.js";
-import { User } from "../models/userModel.js";
+import { User, type IUser } from "../models/userModel.js";
 
 const isProd = env.nodeEnv === "production";
 
@@ -14,14 +14,38 @@ const COOKIE_OPTIONS = {
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
 };
 
-let demoCounter = 0;
+// OWASP's current floor for PBKDF2-HMAC-SHA512. Stored alongside each hash so
+// this can be raised later without locking existing users out.
+const PBKDF2_ITERATIONS = 210_000;
+const PBKDF2_KEY_LENGTH = 64;
+const PBKDF2_DIGEST = "sha512";
 
 function generateSalt(): string {
   return crypto.randomBytes(16).toString("hex");
 }
 
-function hashPassword(password: string, salt: string): string {
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+function hashPassword(password: string, salt: string, iterations: number): string {
+  return crypto
+    .pbkdf2Sync(password, salt, iterations, PBKDF2_KEY_LENGTH, PBKDF2_DIGEST)
+    .toString("hex");
+}
+
+/**
+ * Compares in constant time. A plain `!==` on hex strings short-circuits at the
+ * first differing character, so its runtime leaks how much of a guess was
+ * correct — enough, over many attempts, to reconstruct a hash byte by byte.
+ */
+function verifyPassword(password: string, user: IUser): boolean {
+  const candidate = Buffer.from(
+    hashPassword(password, user.salt, user.hashIterations ?? 1_000),
+    "hex",
+  );
+  const stored = Buffer.from(user.passwordHash, "hex");
+
+  // timingSafeEqual throws on a length mismatch, which would itself be a signal.
+  if (candidate.length !== stored.length) return false;
+
+  return crypto.timingSafeEqual(candidate, stored);
 }
 
 function validatePassword(password: string): string | null {
@@ -44,11 +68,15 @@ function validatePassword(password: string): string | null {
 }
 
 /**
- * Validates credentials and sets HTTP-only JWT cookie.
- * Supports demo accounts:
- * - Host: admin / password123
- * - Bidder: demo / password123
- * Also supports registered users (validating password). Guest logins are not supported.
+ * Validates credentials and sets an HTTP-only JWT cookie.
+ *
+ * `demo` / `password123` is a shared reviewer account: each sign-in mints a
+ * distinct alias so the same credentials can drive several browser windows at
+ * once. Everything else is a registered account with a verified password.
+ *
+ * The JWT carries a role only as an account-level default. Authority inside an
+ * auction comes from the participant record created at room create/join, never
+ * from this token.
  */
 export async function loginHandler(
   req: Request,
@@ -66,35 +94,27 @@ export async function loginHandler(
     const normalizedUsername = trimmedUsername.toLowerCase();
 
     let finalUsername = trimmedUsername;
-    let role: "admin" | "participant" = "participant";
+    const role: "admin" | "participant" = "participant";
 
-    if (normalizedUsername === "admin") {
+    if (normalizedUsername === "demo") {
       if (password !== "password123") {
-        throw new AppError("Invalid credentials for admin account. Password is 'password123'.", 401);
+        throw new AppError("Invalid credentials for the demo account. Password is 'password123'.", 401);
       }
-      role = "admin";
-    } else if (normalizedUsername === "demo") {
-      if (password !== "password123") {
-        throw new AppError("Invalid credentials for demo account. Password is 'password123'.", 401);
-      }
-      demoCounter++;
-      finalUsername = `demo_${demoCounter}`;
-      role = "participant";
+      // Random rather than a counter: a counter lives in process memory, so a
+      // restart replays aliases and the next demo_1 collides with the demo_1
+      // already sitting in a room.
+      finalUsername = `demo_${crypto.randomBytes(3).toString("hex")}`;
     } else {
-      // Check if user exists in the registered users DB
       const user = await User.findOne({ usernameNormalized: normalizedUsername });
-      if (!user) {
-        throw new AppError("Account not found. Please sign up first.", 404);
-      }
       if (!password) {
         throw new AppError("Password is required.", 400);
       }
-      const checkHash = hashPassword(password, user.salt);
-      if (checkHash !== user.passwordHash) {
+      // Same message and roughly the same work whether or not the account
+      // exists, so this cannot be used to enumerate registered usernames.
+      if (!user || !verifyPassword(password, user)) {
         throw new AppError("Invalid username or password.", 401);
       }
       finalUsername = user.username;
-      role = "participant";
     }
 
     // Sign JWT Token
@@ -156,7 +176,7 @@ export async function registerHandler(
 
     // Hash password
     const salt = generateSalt();
-    const passwordHash = hashPassword(password, salt);
+    const passwordHash = hashPassword(password, salt, PBKDF2_ITERATIONS);
 
     // Create user
     const user = new User({
@@ -164,6 +184,7 @@ export async function registerHandler(
       usernameNormalized: normalizedUsername,
       passwordHash,
       salt,
+      hashIterations: PBKDF2_ITERATIONS,
     });
     await user.save();
 
