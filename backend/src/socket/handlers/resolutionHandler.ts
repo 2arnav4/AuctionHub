@@ -112,8 +112,21 @@ async function resolveActiveItem(
     : { status: "sold" };
 
   // Claim the active item conditionally. Only one simultaneous resolution can win.
+  const claim: Record<string, unknown> = { _id: activeItem._id, status: "active" };
+
+  // An expiry must also prove the deadline has actually passed. A bid accepted
+  // moments before expiry pushes endsAt into the future and reschedules the
+  // timer, but clearTimeout cannot recall a callback that has already fired and
+  // is awaiting its database reads. Without this condition that stale callback
+  // still matches on status alone and ends an item that was just extended,
+  // cutting the countdown the extension was meant to protect. Host-initiated
+  // resolutions stay unconditional: selling early is the whole point.
+  if (requestedResolution === "expired") {
+    claim.endsAt = { $lte: new Date() };
+  }
+
   const resolvedItem = await AuctionItem.findOneAndUpdate(
-    { _id: activeItem._id, status: "active" },
+    claim,
     { $set: update },
     { new: true },
   );
@@ -129,7 +142,21 @@ async function resolveActiveItem(
 
 async function expireActiveItem(io: Server, roomId: string): Promise<void> {
   try {
-    await resolveActiveItem(io, roomId, "expired");
+    const resolvedItem = await resolveActiveItem(io, roomId, "expired");
+    if (resolvedItem) return;
+
+    // The expiry did not claim the item. Either it was already resolved, or its
+    // deadline moved into the future between this callback firing and its update.
+    // In that second case an item would otherwise be left active with no timer
+    // owning it, so re-arm from the persisted deadline. This also covers a timer
+    // that fires a fraction early, where the elapsed-deadline check would fail.
+    const room = await Room.findById(roomId);
+    if (!room || room.status !== "live" || !room.currentItemId) return;
+
+    const item = await AuctionItem.findById(room.currentItemId);
+    if (item?.status === "active" && item.endsAt && item.endsAt.getTime() > Date.now()) {
+      scheduleAuctionTimer(io, roomId, item.endsAt);
+    }
   } catch (error) {
     console.error("Error expiring auction item:", error);
   }
