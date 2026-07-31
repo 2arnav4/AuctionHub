@@ -24,7 +24,11 @@ function generateSalt(): string {
   return crypto.randomBytes(16).toString("hex");
 }
 
-function hashPassword(password: string, salt: string, iterations: number): string {
+function hashPassword(
+  password: string,
+  salt: string,
+  iterations: number,
+): string {
   return crypto
     .pbkdf2Sync(password, salt, iterations, PBKDF2_KEY_LENGTH, PBKDF2_DIGEST)
     .toString("hex");
@@ -81,7 +85,7 @@ function validatePassword(password: string): string | null {
 export async function loginHandler(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const { username, password } = req.body;
@@ -98,14 +102,16 @@ export async function loginHandler(
 
     if (normalizedUsername === "demo") {
       if (password !== "password123") {
-        throw new AppError("Invalid credentials for the demo account. Password is 'password123'.", 401);
+        throw new AppError("Invalid credentials for the demo account.", 401);
       }
       // Random rather than a counter: a counter lives in process memory, so a
       // restart replays aliases and the next demo_1 collides with the demo_1
       // already sitting in a room.
       finalUsername = `demo_${crypto.randomBytes(3).toString("hex")}`;
     } else {
-      const user = await User.findOne({ usernameNormalized: normalizedUsername });
+      const user = await User.findOne({
+        usernameNormalized: normalizedUsername,
+      });
       if (!password) {
         throw new AppError("Password is required.", 400);
       }
@@ -118,11 +124,9 @@ export async function loginHandler(
     }
 
     // Sign JWT Token
-    const token = jwt.sign(
-      { username: finalUsername, role },
-      env.jwtSecret,
-      { expiresIn: "24h" }
-    );
+    const token = jwt.sign({ username: finalUsername, role }, env.jwtSecret, {
+      expiresIn: "24h",
+    });
 
     // Set Cookie
     res.cookie("token", token, COOKIE_OPTIONS);
@@ -142,7 +146,7 @@ export async function loginHandler(
 export async function registerHandler(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const { username, password } = req.body;
@@ -158,7 +162,10 @@ export async function registerHandler(
     const normalizedUsername = trimmedUsername.toLowerCase();
 
     // Prevent registering with reserved names
-    if (normalizedUsername === "admin" || normalizedUsername.startsWith("demo")) {
+    if (
+      normalizedUsername === "admin" ||
+      normalizedUsername.startsWith("demo")
+    ) {
       throw new AppError("Username is reserved and cannot be registered.", 400);
     }
 
@@ -169,9 +176,14 @@ export async function registerHandler(
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ usernameNormalized: normalizedUsername });
+    const existingUser = await User.findOne({
+      usernameNormalized: normalizedUsername,
+    });
     if (existingUser) {
-      throw new AppError("Username is already registered. Please choose another or sign in.", 400);
+      throw new AppError(
+        "Username is already registered. Please choose another or sign in.",
+        400,
+      );
     }
 
     // Hash password
@@ -190,11 +202,9 @@ export async function registerHandler(
 
     // Auto-login (Sign JWT Token)
     const role = "participant";
-    const token = jwt.sign(
-      { username: trimmedUsername, role },
-      env.jwtSecret,
-      { expiresIn: "24h" }
-    );
+    const token = jwt.sign({ username: trimmedUsername, role }, env.jwtSecret, {
+      expiresIn: "24h",
+    });
 
     // Set Cookie
     res.cookie("token", token, COOKIE_OPTIONS);
@@ -214,13 +224,17 @@ export async function registerHandler(
 export async function logoutHandler(
   _req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     res.clearCookie("token", {
       httpOnly: true,
       secure: isProd,
-      sameSite: (isProd ? "none" : "lax") as "none" | "lax" | "strict" | undefined,
+      sameSite: (isProd ? "none" : "lax") as
+        | "none"
+        | "lax"
+        | "strict"
+        | undefined,
     });
     res.status(200).json({ message: "Logout successful." });
   } catch (error) {
@@ -234,7 +248,7 @@ export async function logoutHandler(
 export async function meHandler(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const token = req.cookies.token;
@@ -245,7 +259,10 @@ export async function meHandler(
     }
 
     try {
-      const decoded = jwt.verify(token, env.jwtSecret) as { username: string; role: string };
+      const decoded = jwt.verify(token, env.jwtSecret) as {
+        username: string;
+        role: string;
+      };
       res.status(200).json({
         user: {
           username: decoded.username,
