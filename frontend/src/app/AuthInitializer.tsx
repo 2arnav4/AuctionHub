@@ -17,30 +17,44 @@ export function AuthInitializer({ children }: Props) {
   const [status, setStatus] = useState<InitStatus>("loading");
   const [isSlow, setIsSlow] = useState(false);
 
-  const initialise = useCallback(async () => {
-    setStatus("loading");
-    setIsSlow(false);
-
-    try {
-      const data = await checkAuth();
-      setAuthUser(data.user ?? null);
-      setStatus("ready");
-    } catch (error) {
-      // An unreachable backend is not the same as a signed-out user: rendering the
-      // app would leave every subsequent request failing with no explanation.
-      if (error instanceof ApiUnavailableError) {
-        setStatus("unavailable");
-        return;
-      }
-
-      setAuthUser(null);
-      setStatus("ready");
-    }
-  }, [setAuthUser]);
+  // Bumping this re-runs the check. Retrying by changing an input rather than by
+  // calling the effect's body keeps every state write inside either a promise
+  // callback or an event handler, so no render is committed and then discarded.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    void initialise();
-  }, [initialise]);
+    let cancelled = false;
+
+    checkAuth()
+      .then((data) => {
+        if (cancelled) return;
+        setAuthUser(data.user ?? null);
+        setStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+
+        // An unreachable backend is not the same as a signed-out user: rendering
+        // the app would leave every request failing with no explanation.
+        if (error instanceof ApiUnavailableError) {
+          setStatus("unavailable");
+          return;
+        }
+
+        setAuthUser(null);
+        setStatus("ready");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setAuthUser, attempt]);
+
+  const retry = useCallback(() => {
+    setStatus("loading");
+    setIsSlow(false);
+    setAttempt((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     if (status !== "loading") return;
@@ -75,7 +89,7 @@ export function AuthInitializer({ children }: Props) {
           The auction service is not responding. It may still be starting up, or it
           may be temporarily down.
         </p>
-        <Button onClick={() => void initialise()}>Try again</Button>
+        <Button onClick={retry}>Try again</Button>
       </div>
     );
   }
