@@ -6,6 +6,8 @@ export interface IRoom extends Document {
   status: "lobby" | "live" | "completed";
   /** The purse every bidder in this room starts with. Fixed at creation. */
   startingBudget: number;
+  /** Smallest legal raise over the standing highest bid. Fixed at creation. */
+  minBidIncrement: number;
   adminParticipantId?: mongoose.Types.ObjectId | null;
   currentItemId?: mongoose.Types.ObjectId | null;
   endsAt?: Date | null;
@@ -43,6 +45,11 @@ const RoomSchema = new Schema<IRoom>(
       type: Number,
       required: true,
       min: [1, "Starting budget must be positive."],
+    },
+    minBidIncrement: {
+      type: Number,
+      required: true,
+      min: [1, "Minimum bid increment must be positive."],
     },
     adminParticipantId: {
       type: Schema.Types.ObjectId,

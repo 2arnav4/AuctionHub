@@ -34,6 +34,7 @@ before(async () => {
       name: "Concurrency Test Room",
       status: "live",
       startingBudget: 1_000_000,
+      minBidIncrement: TEST_INCREMENT,
     });
     roomId = room._id as mongoose.Types.ObjectId;
   } catch {
@@ -59,6 +60,8 @@ async function createActiveItem(startingBid: number, endsInMs: number) {
   });
 }
 
+const TEST_INCREMENT = 100;
+
 /** The bid handler's claim, in full. */
 function claimBid(itemId: mongoose.Types.ObjectId, amount: number, newEndsAt: Date) {
   return AuctionItem.findOneAndUpdate(
@@ -67,8 +70,13 @@ function claimBid(itemId: mongoose.Types.ObjectId, amount: number, newEndsAt: Da
       status: "active",
       isPaused: false,
       endsAt: { $gt: new Date() },
-      startingBid: { $lte: amount },
-      currentBid: { $lt: amount },
+      $expr: {
+        $cond: {
+          if: { $gt: ["$currentBid", 0] },
+          then: { $gte: [amount, { $add: ["$currentBid", TEST_INCREMENT] }] },
+          else: { $gte: [amount, "$startingBid"] },
+        },
+      },
     },
     { $set: { currentBid: amount, endsAt: newEndsAt } },
     { new: true },
@@ -128,6 +136,42 @@ test("the opening bid may match the asking price exactly", async (t) => {
 
   const result = await claimBid(item._id as mongoose.Types.ObjectId, 100, new Date(Date.now() + 60_000));
   assert.notEqual(result, null, "an item listed at 100 must be openable at 100");
+});
+
+test("a raise below the minimum increment is refused", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 60_000);
+  const later = new Date(Date.now() + 60_000);
+
+  await claimBid(item._id as mongoose.Types.ObjectId, 1_000, later);
+
+  const oneRupeeMore = await claimBid(item._id as mongoose.Types.ObjectId, 1_001, later);
+  assert.equal(oneRupeeMore, null, "outbidding by a rupee must not be possible");
+
+  const justUnder = await claimBid(item._id as mongoose.Types.ObjectId, 1_099, later);
+  assert.equal(justUnder, null, "one short of the increment is still short");
+
+  const exact = await claimBid(item._id as mongoose.Types.ObjectId, 1_100, later);
+  assert.notEqual(exact, null, "exactly one increment above must be accepted");
+});
+
+test("the increment is measured against the live price, not a stale read", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 60_000);
+  const later = new Date(Date.now() + 60_000);
+  await claimBid(item._id as mongoose.Types.ObjectId, 1_000, later);
+
+  // Two bidders both saw ₹1,000 and both compute ₹1,100 as legal. Only one can
+  // win; the loser's amount is no longer a full increment above the new price,
+  // so it must fail rather than sneak through on a stale comparison.
+  const results = await Promise.all([
+    claimBid(item._id as mongoose.Types.ObjectId, 1_100, later),
+    claimBid(item._id as mongoose.Types.ObjectId, 1_100, later),
+  ]);
+  assert.equal(results.filter((r) => r !== null).length, 1, "only one raise may land");
+
+  const stored = await AuctionItem.findById(item._id);
+  assert.equal(stored?.currentBid, 1_100);
 });
 
 test("only one of two simultaneous resolutions wins", async (t) => {

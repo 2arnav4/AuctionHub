@@ -26,15 +26,14 @@ interface ToastMsg {
 }
 
 /**
- * A round raise that stays sensible across magnitudes: ₹100 steps on a ₹500
- * item are useful, on a ₹40,00,000 item they are noise.
+ * The smallest legal bid right now.
+ *
+ * Mirrors getMinimumBid on the server: the opening bid is the asking price
+ * exactly, and every raise after that must clear the room's increment. Kept
+ * identical so the UI never offers an amount the server would reject.
  */
-function getBidStep(amount: number): number {
-  if (amount < 1_000) return 100;
-  if (amount < 10_000) return 500;
-  if (amount < 100_000) return 5_000;
-  if (amount < 1_000_000) return 25_000;
-  return 100_000;
+function getMinimumBid(startingBid: number, currentBid: number, increment: number): number {
+  return currentBid > 0 ? currentBid + increment : startingBid;
 }
 
 export function AuctionPage() {
@@ -80,10 +79,11 @@ export function AuctionPage() {
     }, 4000);
   }, []);
 
+  const minBidIncrement = room?.minBidIncrement ?? 1;
   // The opening bid may match the asking price exactly; every later bid must
-  // beat the standing highest.
+  // clear the room's minimum raise.
   const minBidVal = activeItem
-    ? Math.max(activeItem.startingBid ?? 0, (activeItem.currentBid ?? 0) + 1)
+    ? getMinimumBid(activeItem.startingBid ?? 0, activeItem.currentBid ?? 0, minBidIncrement)
     : 1;
   // currentBid is zero until someone actually bids, so it is only a real price
   // once it is positive.
@@ -107,15 +107,14 @@ export function AuctionPage() {
   // rejected by the server.
   const canAffordMinimum = remainingBudget === null || remainingBudget >= minBidVal;
 
-  // Preset raises, so the common case is one tap rather than typing a number
-  // against a running clock. Anything beyond the purse is dropped rather than
-  // shown disabled: an unaffordable option is noise under a countdown.
-  const bidStep = getBidStep(minBidVal);
+  // Preset raises stepped by the room's own increment, so every chip is a legal
+  // bid by construction. Anything beyond the purse is dropped rather than shown
+  // disabled: an unaffordable option is noise under a countdown.
   const quickBids = [
     { label: "Minimum", amount: minBidVal },
-    { label: `+₹${bidStep.toLocaleString()}`, amount: minBidVal + bidStep },
-    { label: `+₹${(bidStep * 2).toLocaleString()}`, amount: minBidVal + bidStep * 2 },
-    { label: `+₹${(bidStep * 5).toLocaleString()}`, amount: minBidVal + bidStep * 5 },
+    { label: `+₹${minBidIncrement.toLocaleString()}`, amount: minBidVal + minBidIncrement },
+    { label: `+₹${(minBidIncrement * 2).toLocaleString()}`, amount: minBidVal + minBidIncrement * 2 },
+    { label: `+₹${(minBidIncrement * 5).toLocaleString()}`, amount: minBidVal + minBidIncrement * 5 },
   ].filter((quick) => remainingBudget === null || quick.amount <= remainingBudget);
 
   if (remainingBudget !== null && canAffordMinimum && !quickBids.some((q) => q.amount === remainingBudget)) {
@@ -535,7 +534,7 @@ export function AuctionPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg border border-border/50 bg-surface-overlay/40 px-3 py-2">
                       <span className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                        Minimum bid
+                        {highestBid ? `Minimum bid (+₹${minBidIncrement.toLocaleString()})` : "Minimum bid"}
                       </span>
                       <span className="text-lg font-bold tabular-nums text-text-primary">
                         ₹{minBidVal.toLocaleString()}

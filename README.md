@@ -36,6 +36,7 @@ Roles are per-room, not global: whoever creates a room is that room's host, and 
 - **Rooms by code** — create a room, share a six-character code, join from anywhere.
 - **Host and bidder roles** — assigned server-side at room creation or join and encoded in a room-scoped session token.
 - **Catalog preparation** — the host adds items while the room is in the lobby; every connected client sees them appear live.
+- **Minimum raise** — like an auctioneer's step, each room sets the smallest legal increase over the standing bid, so a one-rupee outbid cannot stall an item indefinitely. The opening bid is still the asking price exactly.
 - **Bidder budgets** — every bidder starts with the same purse, set when the room is created. A bid cannot exceed what is left, and the winner is debited only when the sale is final, so the auction is a contest of allocation rather than of who types the biggest number.
 - **Atomic concurrent bidding** — simultaneous bids are resolved by a single conditional MongoDB update, so exactly one can win.
 - **Anti-snipe countdown** — an accepted bid restarts the item's countdown, so a last-second bid cannot win uncontested.
@@ -135,6 +136,7 @@ The concurrency tests run against whatever `MONGODB_URI` points at and skip them
 | `MONGODB_DB_NAME` | no | `auction` | Database to use. Set explicitly because a connection string without a database segment silently resolves to `test`, which is how production data ends up somewhere nobody intended. |
 | `AUCTION_ITEM_DURATION_SECONDS` | no | `60` | Countdown per item, and the amount an accepted bid restores it to. |
 | `DEFAULT_STARTING_BUDGET` | no | `100000` | Purse each bidder starts with when a room does not specify one. |
+| `DEFAULT_MIN_BID_INCREMENT` | no | `500` | Smallest legal raise over the standing bid when a room does not specify one. |
 | `JWT_SECRET` | **yes in production** | dev-only fallback | Signing key. Startup fails if unset when `NODE_ENV=production`. |
 
 **`frontend/.env`**
@@ -196,7 +198,8 @@ To see the concurrency handling directly, open two bidder windows and submit the
 - **Cold starts.** The free Render tier sleeps when idle; the first request can take up to a minute.
 - **Room reads are deliberately public.** Anyone holding a room code can call `GET /api/rooms/:code` and `/results`. The code is the invitation, and requiring an account to view a shared link would defeat that. Neither route returns a session token, so a code grants visibility and never control. Every write is authorized.
 - **No rate limiting** on authentication or bid submission. A determined client can spam `bid:place`; each attempt is validated and rejected correctly, but nothing throttles the attempts.
-- **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so two determined bidders can keep an item open indefinitely. A production auction would cap total duration or reset to a shorter window.
+- **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so two determined bidders can keep an item open indefinitely — though the minimum raise means the price climbs every time they do, so it terminates once someone's purse runs out. A production auction would also cap total duration or reset to a shorter window.
+- **Flat bid increment.** The minimum raise is a single figure per room. Real auctions use a tiered ladder that widens as the price climbs, so a ₹500 step is not still in force at ₹40,00,000.
 - **Tests cover the concurrency primitives, not the transport.** The conditional updates that make bidding and resolution safe are tested against a real MongoDB, but the socket handlers wrapping them are verified manually across browser windows.
 - **The auth JWT is readable by JavaScript.** The API is on a different domain than the app, so its cookie is third-party and blocked by default in Chrome incognito and under Safari/Firefox tracking protection. The token is therefore also held client-side and sent as a bearer header, which trades HTTP-only protection for actually working. Serving both from one origin would remove the trade-off — see [DECISIONS.md](DECISIONS.md).
 - **Demo accounts share one password.** `demo` / `password123` is a shared reviewer login that mints a distinct alias per sign-in. Convenient for a walkthrough, obviously not an authentication model.

@@ -3,7 +3,7 @@ import { AuctionItem } from "../../models/itemModel.js";
 import { Bid } from "../../models/bidModel.js";
 import { Participant } from "../../models/participantModel.js";
 import { Room } from "../../models/roomModel.js";
-import { isValidPositiveAmount } from "../../utils/auction.js";
+import { getMinimumBid, isValidPositiveAmount } from "../../utils/auction.js";
 import { env } from "../../config/env.js";
 import { scheduleAuctionTimer } from "./resolutionHandler.js";
 
@@ -68,7 +68,7 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
       if (activeItem.isPaused) {
         socket.emit("bid:rejected", {
           reason: "Bidding is paused by the host.",
-          minimumBid: Math.max(activeItem.startingBid, activeItem.currentBid + 1),
+          minimumBid: getMinimumBid(activeItem.startingBid, activeItem.currentBid, room.minBidIncrement),
         });
         return;
       }
@@ -102,14 +102,18 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
       if (amount > remainingBudget) {
         socket.emit("bid:rejected", {
           reason: `That exceeds your remaining purse of ₹${remainingBudget.toLocaleString("en-IN")}.`,
-          minimumBid: Math.max(activeItem.startingBid, activeItem.currentBid + 1),
+          minimumBid: getMinimumBid(activeItem.startingBid, activeItem.currentBid, room.minBidIncrement),
         });
         return;
       }
 
       // 3b. Validate bid amount. The first bid may match the asking price
-      // exactly; every later bid must beat the standing highest.
-      const minimumBidRequired = Math.max(activeItem.startingBid, activeItem.currentBid + 1);
+      // exactly; every later bid must clear the room's minimum increment.
+      const minimumBidRequired = getMinimumBid(
+        activeItem.startingBid,
+        activeItem.currentBid,
+        room.minBidIncrement,
+      );
       if (amount < minimumBidRequired) {
         socket.emit("bid:rejected", {
           reason: `Bid amount is too low. Minimum required: ₹${minimumBidRequired}`,
@@ -139,12 +143,22 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
           // through after the countdown had visibly stopped for everyone.
           isPaused: false,
           endsAt: { $gt: new Date() },
-          // Both floors are enforced here, not just in the check above, because
-          // the check above is a separate read and cannot be trusted under
-          // concurrency. currentBid starts at zero, so without the startingBid
-          // condition any positive amount would satisfy the filter.
-          startingBid: { $lte: amount },
-          currentBid: { $lt: amount },
+          // The price floor is expressed against the document's own fields
+          // rather than against the values read a moment ago. A plain
+          // `currentBid: { $lt: amount }` would compare correctly but enforce
+          // the wrong rule: it permits a one-rupee raise. Computing the floor
+          // inside the query means a bid that was legal when it was validated
+          // is re-checked against whatever the current price actually is.
+          $expr: {
+            $cond: {
+              // No bids yet: the asking price is the floor, unmodified. Adding
+              // an increment here would mean the advertised price was never
+              // actually available to anyone.
+              if: { $gt: ["$currentBid", 0] },
+              then: { $gte: [amount, { $add: ["$currentBid", room.minBidIncrement] }] },
+              else: { $gte: [amount, "$startingBid"] },
+            },
+          },
         },
         {
           $set: {
@@ -160,7 +174,7 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
       if (!updatedItem) {
         const latestItem = await AuctionItem.findById(activeItem._id);
         const latestMinimumBid = latestItem
-          ? Math.max(latestItem.startingBid, latestItem.currentBid + 1)
+          ? getMinimumBid(latestItem.startingBid, latestItem.currentBid, room.minBidIncrement)
           : 1;
         const reason = latestItem?.isPaused
           ? "Bidding is paused by the host."

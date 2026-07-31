@@ -57,6 +57,10 @@ async function migrateBudgets(): Promise<void> {
     { startingBudget: { $exists: false } },
     { $set: { startingBudget: env.defaultStartingBudget } },
   );
+  await Room.collection.updateMany(
+    { minBidIncrement: { $exists: false } },
+    { $set: { minBidIncrement: env.defaultMinBidIncrement } },
+  );
   await Participant.collection.updateMany(
     { budget: { $exists: false } },
     { $set: { budget: env.defaultStartingBudget, spent: 0 } },

@@ -53,11 +53,14 @@ async function seed(): Promise<void> {
   // level a bidder can take the Rolex and one other lot, or spread across
   // three, but not have all four.
   const startingBudget = 60_000;
+  // Large enough that raises move the price visibly rather than crawling.
+  const minBidIncrement = 2_500;
   const room = new Room({
     code,
     name: "Rare Collectibles — Demo Auction",
     status: "lobby",
     startingBudget,
+    minBidIncrement,
   });
   await room.save();
 

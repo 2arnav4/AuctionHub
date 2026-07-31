@@ -12,15 +12,17 @@ export async function createRoomHandler(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { roomName, startingBudget } = req.body;
+    const { roomName, startingBudget, minBidIncrement } = req.body;
     // requireAuth guarantees this; the body is deliberately not consulted.
     const username = req.user?.username ?? "";
+    const optionalNumber = (value: unknown) =>
+      value === undefined || value === null || value === "" ? undefined : Number(value);
+
     const result = await roomService.createRoom(
       username,
       roomName,
-      startingBudget === undefined || startingBudget === null || startingBudget === ""
-        ? undefined
-        : Number(startingBudget),
+      optionalNumber(startingBudget),
+      optionalNumber(minBidIncrement),
     );
     res.status(201).json(result);
   } catch (error) {

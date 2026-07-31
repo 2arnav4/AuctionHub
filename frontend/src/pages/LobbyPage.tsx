@@ -282,11 +282,18 @@ export function LobbyPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
                   Invite Code
                 </span>
-                {room?.startingBudget != null && (
-                  <span className="shrink-0 rounded-full border border-accent/20 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
-                    ₹{room.startingBudget.toLocaleString()} purse each
-                  </span>
-                )}
+                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                  {room?.startingBudget != null && (
+                    <span className="rounded-full border border-accent/20 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
+                      ₹{room.startingBudget.toLocaleString()} purse each
+                    </span>
+                  )}
+                  {room?.minBidIncrement != null && (
+                    <span className="rounded-full border border-border bg-surface-overlay px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-text-secondary">
+                      ₹{room.minBidIncrement.toLocaleString()} min raise
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-sm text-text-secondary leading-relaxed">
                 Share this code with other users to let them join this room in realtime.

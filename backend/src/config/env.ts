@@ -38,6 +38,10 @@ export const env = {
   // contest of allocation rather than of who is willing to type the largest
   // number. Overridable per room at creation.
   defaultStartingBudget: getPositiveInteger("DEFAULT_STARTING_BUDGET", "100000"),
+  // The smallest legal raise. Without one, a bidder can outbid by a rupee, which
+  // makes the countdown extension meaningless: an item can be held open forever
+  // by increments that never meaningfully change the price.
+  defaultMinBidIncrement: getPositiveInteger("DEFAULT_MIN_BID_INCREMENT", "500"),
   jwtSecret:
     process.env.JWT_SECRET ??
     (nodeEnv === "production"

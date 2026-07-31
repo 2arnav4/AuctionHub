@@ -88,8 +88,15 @@ const updatedItem = await AuctionItem.findOneAndUpdate(
     status: "active",
     isPaused: false,
     endsAt: { $gt: new Date() },
-    startingBid: { $lte: amount },   // may open at the asking price
-    currentBid: { $lt: amount },     // must beat the standing highest
+    // The price floor is computed from the document's own fields rather than
+    // from values read a moment earlier.
+    $expr: {
+      $cond: {
+        if: { $gt: ["$currentBid", 0] },
+        then: { $gte: [amount, { $add: ["$currentBid", room.minBidIncrement] }] },
+        else: { $gte: [amount, "$startingBid"] },
+      },
+    },
   },
   {
     $set: {
@@ -103,7 +110,13 @@ const updatedItem = await AuctionItem.findOneAndUpdate(
 );
 ```
 
-Only one execution can match `currentBid: { $lt: amount }`; any concurrent bid at the same or a lower amount fails the filter and returns `null`. The loser receives `bid:rejected` with the new minimum.
+Only one execution can satisfy the floor; any concurrent bid at the same or a lower amount fails the filter and returns `null`. The loser receives `bid:rejected` with the new minimum.
+
+**Why `$expr` rather than a plain comparison.** A filter like `currentBid: { $lt: amount }` compares correctly but encodes the wrong rule — it permits a one-rupee raise, which makes the countdown extension farcical: two bidders could hold an item open indefinitely without the price meaningfully moving. Rooms therefore carry a `minBidIncrement`, and the floor is `currentBid + minBidIncrement`.
+
+That floor has to be evaluated against the *live* document. Computing it in application code from a value read moments earlier would let a bid that was legal when validated slip through after the price had already moved — two bidders both seeing ₹1,000 would both calculate ₹1,100 as legal, and the loser's amount would no longer be a full increment above the new price. `$expr` moves the arithmetic inside the query so it is always measured against the current row.
+
+The opening bid is deliberately exempt: with no bids yet the floor is the asking price exactly, because an increment on top of it would mean the advertised price was never actually available.
 
 The same update extends the deadline. An accepted bid restores the full countdown, so a bid landing in the final second cannot win uncontested — see [DECISIONS.md](DECISIONS.md) for that trade-off.
 

@@ -12,6 +12,7 @@ import { getErrorMessage } from "../utils/error";
 // Matches the server's fallback. Shown pre-filled so the field reads as a
 // setting with a sensible value rather than a question.
 const DEFAULT_STARTING_BUDGET = 100_000;
+const DEFAULT_MIN_BID_INCREMENT = 500;
 
 export function CreateRoomPage() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export function CreateRoomPage() {
   const username = authUser?.username ?? "";
   const [roomName, setRoomName] = useState("");
   const [budget, setBudget] = useState(String(DEFAULT_STARTING_BUDGET));
+  const [increment, setIncrement] = useState(String(DEFAULT_MIN_BID_INCREMENT));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,11 +45,21 @@ export function CreateRoomPage() {
       return;
     }
 
+    const incrementValue = Number(increment);
+    if (!Number.isFinite(incrementValue) || incrementValue <= 0) {
+      setError("Minimum raise must be a positive number.");
+      return;
+    }
+    if (incrementValue > budgetValue) {
+      setError("Minimum raise cannot exceed the bidder budget.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const data = await createRoom(username.trim(), roomName.trim(), budgetValue);
+      const data = await createRoom(username.trim(), roomName.trim(), budgetValue, incrementValue);
       setSession({
         roomCode: data.room.code,
         sessionToken: data.sessionToken,
@@ -139,6 +151,33 @@ export function CreateRoomPage() {
             <p className="text-[10px] text-text-muted">
               Every bidder starts with this purse and cannot bid beyond what is left of it.
               Fixed once the room is created.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="increment"
+              className="text-xs font-semibold uppercase tracking-wider text-text-secondary"
+            >
+              Minimum Raise
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">₹</span>
+              <input
+                id="increment"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 500"
+                value={increment}
+                onChange={(e) => setIncrement(e.target.value.replace(/[^0-9]/g, ""))}
+                className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg pl-8 pr-4 py-2.5 text-sm tabular-nums text-text-primary placeholder:text-text-muted transition-all outline-none"
+                disabled={loading}
+              />
+            </div>
+            <p className="text-[10px] text-text-muted">
+              The smallest legal raise over the standing bid, like an auctioneer's step.
+              The opening bid is still the item's asking price exactly.
             </p>
           </div>
 

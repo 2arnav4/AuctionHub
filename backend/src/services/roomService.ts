@@ -22,6 +22,7 @@ export async function createRoom(
   username: string,
   roomName: string,
   startingBudget?: number,
+  minBidIncrement?: number,
 ) {
   if (!username?.trim()) {
     throw new AppError("Username is required", 400);
@@ -35,6 +36,17 @@ export async function createRoom(
     throw new AppError("Starting budget must be a positive number.", 400);
   }
 
+  const increment = minBidIncrement ?? env.defaultMinBidIncrement;
+  if (!Number.isFinite(increment) || increment <= 0) {
+    throw new AppError("Minimum bid increment must be a positive number.", 400);
+  }
+  if (increment > budget) {
+    throw new AppError(
+      "Minimum bid increment cannot exceed the bidder budget, or no raise would ever be affordable.",
+      400,
+    );
+  }
+
   // 1. Generate unique room code
   const code = await generateUniqueRoomCode();
 
@@ -44,6 +56,7 @@ export async function createRoom(
     name: roomName.trim(),
     status: "lobby",
     startingBudget: budget,
+    minBidIncrement: increment,
   });
   await room.save();
 
