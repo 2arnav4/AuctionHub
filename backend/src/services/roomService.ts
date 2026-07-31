@@ -5,6 +5,7 @@ import { AuctionItem } from "../models/itemModel.js";
 import { generateUniqueRoomCode } from "../utils/codeGenerator.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { env } from "../config/env.js";
+import { requirePositiveNumber, requireString } from "../utils/validation.js";
 
 function isDuplicateKeyError(error: unknown): boolean {
   return (
@@ -24,22 +25,17 @@ export async function createRoom(
   startingBudget?: number,
   minBidIncrement?: number,
 ) {
-  if (!username?.trim()) {
-    throw new AppError("Username is required", 400);
-  }
-  if (!roomName?.trim()) {
-    throw new AppError("Room name is required", 400);
-  }
+  const hostName = requireString(username, "Username", 40);
+  const name = requireString(roomName, "Room name", 60);
 
-  const budget = startingBudget ?? env.defaultStartingBudget;
-  if (!Number.isFinite(budget) || budget <= 0) {
-    throw new AppError("Starting budget must be a positive number.", 400);
-  }
-
-  const increment = minBidIncrement ?? env.defaultMinBidIncrement;
-  if (!Number.isFinite(increment) || increment <= 0) {
-    throw new AppError("Minimum bid increment must be a positive number.", 400);
-  }
+  const budget = requirePositiveNumber(
+    startingBudget ?? env.defaultStartingBudget,
+    "Starting budget",
+  );
+  const increment = requirePositiveNumber(
+    minBidIncrement ?? env.defaultMinBidIncrement,
+    "Minimum bid increment",
+  );
   if (increment > budget) {
     throw new AppError(
       "Minimum bid increment cannot exceed the bidder budget, or no raise would ever be affordable.",
@@ -53,7 +49,7 @@ export async function createRoom(
   // 2. Create the room
   const room = new Room({
     code,
-    name: roomName.trim(),
+    name,
     status: "lobby",
     startingBudget: budget,
     minBidIncrement: increment,
@@ -65,8 +61,8 @@ export async function createRoom(
   const sessionToken = crypto.randomUUID();
   const participant = new Participant({
     roomId: room._id,
-    username: username.trim(),
-    usernameNormalized: username.trim().toLowerCase(),
+    username: hostName,
+    usernameNormalized: hostName.toLowerCase(),
     role: "admin",
     sessionToken,
     budget,
@@ -89,14 +85,8 @@ export async function createRoom(
  * Adds a participant to an existing auction room if name is not taken.
  */
 export async function joinRoom(code: string, username: string) {
-  if (!code?.trim()) {
-    throw new AppError("Room code is required", 400);
-  }
-  if (!username?.trim()) {
-    throw new AppError("Username is required", 400);
-  }
-
-  const normalizedCode = code.trim().toUpperCase();
+  const bidderName = requireString(username, "Username", 40);
+  const normalizedCode = requireString(code, "Room code").toUpperCase();
 
   // 1. Find room
   const room = await Room.findOne({ code: normalizedCode });
@@ -108,7 +98,7 @@ export async function joinRoom(code: string, username: string) {
     throw new AppError("This auction room has already completed", 400);
   }
 
-  const normalizedUsername = username.trim().toLowerCase();
+  const normalizedUsername = bidderName.toLowerCase();
 
   // 2. Verify that username is not already taken in this room.
   const existingParticipant = await Participant.findOne({
@@ -123,7 +113,7 @@ export async function joinRoom(code: string, username: string) {
   const sessionToken = crypto.randomUUID();
   const participant = new Participant({
     roomId: room._id,
-    username: username.trim(),
+    username: bidderName,
     usernameNormalized: normalizedUsername,
     role: "participant",
     sessionToken,
@@ -156,11 +146,7 @@ export async function joinRoom(code: string, username: string) {
  * Retrieves public room details by room code.
  */
 export async function getRoomByCode(code: string) {
-  if (!code?.trim()) {
-    throw new AppError("Room code is required", 400);
-  }
-
-  const normalizedCode = code.trim().toUpperCase();
+  const normalizedCode = requireString(code, "Room code").toUpperCase();
   const room = await Room.findOne({ code: normalizedCode });
   if (!room) {
     throw new AppError("Room not found", 404);
@@ -173,11 +159,7 @@ export async function getRoomByCode(code: string) {
  * Retrieves resolved auction items (sold/unsold) for results presentation.
  */
 export async function getRoomResults(code: string) {
-  if (!code?.trim()) {
-    throw new AppError("Room code is required", 400);
-  }
-
-  const normalizedCode = code.trim().toUpperCase();
+  const normalizedCode = requireString(code, "Room code").toUpperCase();
   const room = await Room.findOne({ code: normalizedCode });
   if (!room) {
     throw new AppError("Room not found", 404);

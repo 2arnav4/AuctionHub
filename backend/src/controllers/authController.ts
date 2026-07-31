@@ -5,6 +5,7 @@ import { AppError } from "../middleware/errorHandler.js";
 import { env } from "../config/env.js";
 import { User, type IUser } from "../models/userModel.js";
 import { readAuthToken } from "../middleware/authMiddleware.js";
+import { requireString } from "../utils/validation.js";
 
 const isProd = env.nodeEnv === "production";
 
@@ -91,11 +92,7 @@ export async function loginHandler(
   try {
     const { username, password } = req.body;
 
-    if (!username?.trim()) {
-      throw new AppError("Username is required.", 400);
-    }
-
-    const trimmedUsername = username.trim();
+    const trimmedUsername = requireString(username, "Username", 40);
     const normalizedUsername = trimmedUsername.toLowerCase();
 
     let finalUsername = trimmedUsername;
@@ -113,12 +110,10 @@ export async function loginHandler(
       const user = await User.findOne({
         usernameNormalized: normalizedUsername,
       });
-      if (!password) {
-        throw new AppError("Password is required.", 400);
-      }
+      const suppliedPassword = requireString(password, "Password");
       // Same message and roughly the same work whether or not the account
       // exists, so this cannot be used to enumerate registered usernames.
-      if (!user || !verifyPassword(password, user)) {
+      if (!user || !verifyPassword(suppliedPassword, user)) {
         throw new AppError("Invalid username or password.", 401);
       }
       finalUsername = user.username;
@@ -157,14 +152,8 @@ export async function registerHandler(
   try {
     const { username, password } = req.body;
 
-    if (!username?.trim()) {
-      throw new AppError("Username is required.", 400);
-    }
-    if (!password) {
-      throw new AppError("Password is required.", 400);
-    }
-
-    const trimmedUsername = username.trim();
+    const trimmedUsername = requireString(username, "Username", 40);
+    const suppliedPassword = requireString(password, "Password");
     const normalizedUsername = trimmedUsername.toLowerCase();
 
     // Prevent registering with reserved names
@@ -176,7 +165,7 @@ export async function registerHandler(
     }
 
     // Validate password strength
-    const passwordError = validatePassword(password);
+    const passwordError = validatePassword(suppliedPassword);
     if (passwordError) {
       throw new AppError(passwordError, 400);
     }
@@ -194,7 +183,7 @@ export async function registerHandler(
 
     // Hash password
     const salt = generateSalt();
-    const passwordHash = hashPassword(password, salt, PBKDF2_ITERATIONS);
+    const passwordHash = hashPassword(suppliedPassword, salt, PBKDF2_ITERATIONS);
 
     // Create user
     const user = new User({

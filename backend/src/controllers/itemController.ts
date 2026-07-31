@@ -20,7 +20,9 @@ export async function addItemHandler(
       req.sessionToken as string,
       name,
       description,
-      Number(startingBid),
+      // Passed through untouched: Number(undefined) is NaN, which would report
+      // a missing field as an invalid one. The service decides what is valid.
+      startingBid,
     );
 
     // Retrieve global Socket.IO instance and broadcast event
