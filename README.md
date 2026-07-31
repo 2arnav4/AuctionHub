@@ -105,12 +105,20 @@ cp .env.example .env
 npm run dev              # http://localhost:5173
 ```
 
+**Seed a demo room** (optional — creates a room with a prepared catalog and prints how to open it as the host)
+
+```bash
+cd backend && npm run seed
+```
+
 **Checks**
 
 ```bash
-cd backend  && npm run lint && npm test    # typecheck + unit tests
+cd backend  && npm run lint && npm test    # typecheck, unit + concurrency tests
 cd frontend && npm run lint && npm run build
 ```
+
+The concurrency tests run against whatever `MONGODB_URI` points at and skip themselves if no database is reachable, so `npm test` passes either way.
 
 ## Environment Variables
 
@@ -179,16 +187,14 @@ To see the concurrency handling directly, open two bidder windows and submit the
 
 ## Known Limitations
 
-- **Single instance only.** Countdown timers live in an in-memory `Map` keyed by room id. Running two backend instances behind a load balancer would fragment that map, and Socket.IO broadcasts would not reach clients on the other instance. Horizontal scaling needs the Redis adapter plus a shared scheduler.
+- **Single instance only.** Countdown timers live in an in-memory `Map` keyed by room id. Running two backend instances behind a load balancer would fragment that map, and Socket.IO broadcasts would not reach clients on the other instance. Horizontal scaling needs the Redis adapter plus a shared scheduler. This is the most significant limitation.
 - **Cold starts.** The free Render tier sleeps when idle; the first request can take up to a minute.
-- **Room reads are public.** Anyone holding a room code can call `GET /api/rooms/:code` and `/results`. Bidding and catalog changes are authorized, reading is not.
-- **Room create and join are not authenticated at the API level.** The UI requires a signed-in user, but the endpoints accept a username in the body.
-- **Password hashing is weak.** PBKDF2-SHA512 at 1,000 iterations, well below current guidance.
-- **No rate limiting** on authentication or bid submission.
-- **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so an item can in principle be extended indefinitely.
-- **Bidding closes on the client clock.** The bid form hides when the client believes the deadline has passed. A significantly fast client clock can hide the form early, though the server would still accept the bid.
-- **Minimum bid is one above the starting price.** An item listed at ₹500 opens at ₹501, because items are created with `currentBid` equal to `startingBid`.
-- **Test coverage is thin.** Unit tests cover pure helpers only; the concurrency paths are verified manually.
+- **Room reads are deliberately public.** Anyone holding a room code can call `GET /api/rooms/:code` and `/results`. The code is the invitation, and requiring an account to view a shared link would defeat that. Neither route returns a session token, so a code grants visibility and never control. Every write is authorized.
+- **No rate limiting** on authentication or bid submission. A determined client can spam `bid:place`; each attempt is validated and rejected correctly, but nothing throttles the attempts.
+- **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so two determined bidders can keep an item open indefinitely. A production auction would cap total duration or reset to a shorter window.
+- **No host pause/resume.** The host can sell or mark unsold at any time, but cannot freeze a running countdown.
+- **Tests cover the concurrency primitives, not the transport.** The conditional updates that make bidding and resolution safe are tested against a real MongoDB, but the socket handlers wrapping them are verified manually across browser windows.
+- **Demo accounts share one password.** `demo` / `password123` is a shared reviewer login that mints a distinct alias per sign-in. Convenient for a walkthrough, obviously not an authentication model.
 
 ## Future Improvements
 

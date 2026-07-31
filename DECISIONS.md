@@ -24,8 +24,7 @@ This document outlines key technical decisions, architectural trade-offs, and de
 - **Restoration Resiliency:** Because `endsAt` is stored as an absolute UTC date in MongoDB, a server crash or database disconnection does not reset the timer duration when the backend restarts. The server simply query active rooms and schedules the timer for `endsAt - now`.
 - **Clock Drift Mitigation:** Bids are validated against the server's clock inside the conditional update (`endsAt: { $gt: new Date() }`), so a drifted client cannot buy itself extra time.
 
-### Known gap
-Drift protection is one-directional. The server refuses late bids, but the client decides when to *hide* the bid form, using its own clock against the server's `endsAt`. A client running significantly fast therefore hides the input while the server would still accept a bid — the honest-user mirror of the cheat this design prevents. `item:activated` already carries the server's clock at activation (`startedAt`), which is the raw material for an offset correction; it is currently unused.
+- **Offset correction:** drift protection would otherwise be one-directional. The server refuses late bids, but the *client* decides when to hide the bid form, so a client running fast would hide the input while the server was still accepting — the honest-user mirror of the cheat this design prevents. Both `room:state` and `item:activated` therefore carry the server's clock at send time, and the client subtracts the measured offset before rendering the countdown. Deadlines stay absolute and server-owned; only the local rendering of them is corrected.
 
 ---
 
@@ -50,8 +49,12 @@ Drift protection is one-directional. The server refuses late bids, but the clien
 - **Socket Handshake Security:** Socket.IO handshakes carry the `sessionToken`, which is matched against a participant record before the socket is allowed into a room channel. Session tokens are stripped from every participant list sent to clients.
 - **Authorization lives with the room, not the cookie:** every privileged action — adding an item, starting the auction, resolving an item, placing a bid — is checked against the participant's role, not the JWT.
 
-### Known gap
-The JWT layer currently establishes *identity* but does not *gate* the room endpoints: `POST /api/rooms` and `POST /api/rooms/:code/join` run behind an optional-auth middleware that never rejects, and fall back to a username supplied in the request body. The UI always sends an authenticated request, so this is invisible in normal use, but the endpoints are callable without a cookie. Room reads (`GET /api/rooms/:code` and `/results`) are public by the same omission. Closing this means a `requireAuth` middleware on the two write routes and a deliberate decision about whether room reads should stay open.
+### Where each layer applies
+`POST /api/rooms` and `POST /api/rooms/:code/join` sit behind `requireAuth`, and take the username from the verified cookie only — never from the request body. Accepting a body-supplied name would let an unauthenticated caller enter a room under any identity, and since these two endpoints establish who a participant is for the entire auction, that is the one place identity must not be negotiable.
+
+Room *reads* stay open on purpose: a room code is an invitation, and requiring an account to view a shared link would defeat sharing it. Neither read route returns a session token, so a code grants visibility, never control.
+
+Everything inside a room — adding items, starting the auction, bidding, resolving — is authorized against the participant record, not the JWT. The token's `role` claim is an account-level default only and is deliberately never consulted for auction authority.
 
 ---
 
