@@ -34,6 +34,10 @@ export const env = {
   // string happens to be pasted into a hosting dashboard.
   mongodbDbName: getEnv("MONGODB_DB_NAME", "auction"),
   auctionItemDurationSeconds: getPositiveInteger("AUCTION_ITEM_DURATION_SECONDS", "60"),
+  // Every bidder in a room starts with the same purse, so the auction is a
+  // contest of allocation rather than of who is willing to type the largest
+  // number. Overridable per room at creation.
+  defaultStartingBudget: getPositiveInteger("DEFAULT_STARTING_BUDGET", "100000"),
   jwtSecret:
     process.env.JWT_SECRET ??
     (nodeEnv === "production"

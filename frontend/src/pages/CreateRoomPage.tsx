@@ -9,6 +9,10 @@ import { createRoom } from "../services/api";
 import { useSessionStore } from "../stores/useSessionStore";
 import { getErrorMessage } from "../utils/error";
 
+// Matches the server's fallback. Shown pre-filled so the field reads as a
+// setting with a sensible value rather than a question.
+const DEFAULT_STARTING_BUDGET = 100_000;
+
 export function CreateRoomPage() {
   const navigate = useNavigate();
   const authUser = useSessionStore((state) => state.authUser);
@@ -16,6 +20,7 @@ export function CreateRoomPage() {
 
   const username = authUser?.username ?? "";
   const [roomName, setRoomName] = useState("");
+  const [budget, setBudget] = useState(String(DEFAULT_STARTING_BUDGET));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,11 +37,17 @@ export function CreateRoomPage() {
       return;
     }
 
+    const budgetValue = Number(budget);
+    if (!Number.isFinite(budgetValue) || budgetValue <= 0) {
+      setError("Starting budget must be a positive number.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const data = await createRoom(username.trim(), roomName.trim());
+      const data = await createRoom(username.trim(), roomName.trim(), budgetValue);
       setSession({
         roomCode: data.room.code,
         sessionToken: data.sessionToken,
@@ -64,6 +75,7 @@ export function CreateRoomPage() {
       <div className="mx-auto max-w-md w-full mt-8">
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 shadow-xl"
         >
           {error && (
@@ -101,6 +113,33 @@ export function CreateRoomPage() {
               className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-all outline-none"
               disabled={loading}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="budget"
+              className="text-xs font-semibold uppercase tracking-wider text-text-secondary"
+            >
+              Bidder Budget
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">₹</span>
+              <input
+                id="budget"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 100000"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value.replace(/[^0-9]/g, ""))}
+                className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-2 focus:ring-accent/20 rounded-lg pl-8 pr-4 py-2.5 text-sm tabular-nums text-text-primary placeholder:text-text-muted transition-all outline-none"
+                disabled={loading}
+              />
+            </div>
+            <p className="text-[10px] text-text-muted">
+              Every bidder starts with this purse and cannot bid beyond what is left of it.
+              Fixed once the room is created.
+            </p>
           </div>
 
           <Button

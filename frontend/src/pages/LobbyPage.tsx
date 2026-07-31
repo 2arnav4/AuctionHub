@@ -278,9 +278,16 @@ export function LobbyPage() {
           {/* Room Details Card (3/5 width) */}
           <div className="sm:col-span-3 border border-border bg-surface-raised/40 backdrop-blur-md p-6 rounded-xl space-y-6 flex flex-col justify-between shadow-lg">
             <div className="space-y-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-                Invite Code
-              </span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Invite Code
+                </span>
+                {room?.startingBudget != null && (
+                  <span className="shrink-0 rounded-full border border-accent/20 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
+                    ₹{room.startingBudget.toLocaleString()} purse each
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-text-secondary leading-relaxed">
                 Share this code with other users to let them join this room in realtime.
               </p>
@@ -536,11 +543,9 @@ export function LobbyPage() {
                       )}
                     </p>
                     <div className="flex items-center gap-1.5">
-                      {p.role === "admin" ? (
-                        <span className="text-[10px] text-amber-400 font-medium">Host</span>
-                      ) : (
-                        <span className="text-[10px] text-accent font-medium">Bidder</span>
-                      )}
+                      <span className="text-[10px] tabular-nums text-text-muted">
+                        ₹{(p.budget - p.spent).toLocaleString()} purse
+                      </span>
                     </div>
                   </div>
                 </div>

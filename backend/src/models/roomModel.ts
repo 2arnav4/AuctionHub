@@ -4,6 +4,8 @@ export interface IRoom extends Document {
   code: string;
   name: string;
   status: "lobby" | "live" | "completed";
+  /** The purse every bidder in this room starts with. Fixed at creation. */
+  startingBudget: number;
   adminParticipantId?: mongoose.Types.ObjectId | null;
   currentItemId?: mongoose.Types.ObjectId | null;
   endsAt?: Date | null;
@@ -36,6 +38,11 @@ const RoomSchema = new Schema<IRoom>(
       enum: ["lobby", "live", "completed"],
       default: "lobby",
       required: true,
+    },
+    startingBudget: {
+      type: Number,
+      required: true,
+      min: [1, "Starting budget must be positive."],
     },
     adminParticipantId: {
       type: Schema.Types.ObjectId,

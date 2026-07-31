@@ -48,6 +48,7 @@ export function AuctionPage() {
     roomCode: sessionRoomCode,
     username: sessionUsername,
     role: sessionRole,
+    participantId: sessionParticipantId,
     clearRoomSession,
   } = useSessionStore();
 
@@ -99,15 +100,27 @@ export function AuctionPage() {
       : 0;
   const biddingOpen = Boolean(activeItem) && !isPaused && secondsRemaining > 0;
 
+  const me = participants.find((participant) => participant._id === sessionParticipantId);
+  const remainingBudget = me ? me.budget - me.spent : null;
+  // A bidder whose purse cannot even cover the minimum is out of the running for
+  // this item, which is worth saying plainly rather than letting them bid and be
+  // rejected by the server.
+  const canAffordMinimum = remainingBudget === null || remainingBudget >= minBidVal;
+
   // Preset raises, so the common case is one tap rather than typing a number
-  // against a running clock.
+  // against a running clock. Anything beyond the purse is dropped rather than
+  // shown disabled: an unaffordable option is noise under a countdown.
   const bidStep = getBidStep(minBidVal);
   const quickBids = [
     { label: "Minimum", amount: minBidVal },
     { label: `+₹${bidStep.toLocaleString()}`, amount: minBidVal + bidStep },
     { label: `+₹${(bidStep * 2).toLocaleString()}`, amount: minBidVal + bidStep * 2 },
     { label: `+₹${(bidStep * 5).toLocaleString()}`, amount: minBidVal + bidStep * 5 },
-  ];
+  ].filter((quick) => remainingBudget === null || quick.amount <= remainingBudget);
+
+  if (remainingBudget !== null && canAffordMinimum && !quickBids.some((q) => q.amount === remainingBudget)) {
+    quickBids.push({ label: "All in", amount: remainingBudget });
+  }
 
   useEffect(() => {
     if (!Number.isFinite(endsAtMs)) return;
@@ -202,6 +215,11 @@ export function AuctionPage() {
 
     if (!Number.isFinite(bidAmount) || bidAmount < minBidVal) {
       setLocalBidErr(`Bid must be at least ₹${minBidVal.toLocaleString()}.`);
+      return;
+    }
+
+    if (remainingBudget !== null && bidAmount > remainingBudget) {
+      setLocalBidErr(`That exceeds your remaining purse of ₹${remainingBudget.toLocaleString()}.`);
       return;
     }
 
@@ -514,14 +532,42 @@ export function AuctionPage() {
                     unstyled native popup that appears on submit and cannot be
                     themed. All validation is ours, rendered inline. */}
                 <form onSubmit={handleSubmitBid} className="space-y-4" noValidate>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                      Minimum bid
-                    </span>
-                    <span className="text-lg font-bold tabular-nums text-text-primary">
-                      ₹{minBidVal.toLocaleString()}
-                    </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-border/50 bg-surface-overlay/40 px-3 py-2">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                        Minimum bid
+                      </span>
+                      <span className="text-lg font-bold tabular-nums text-text-primary">
+                        ₹{minBidVal.toLocaleString()}
+                      </span>
+                    </div>
+                    <div
+                      className={`rounded-lg border px-3 py-2 ${
+                        canAffordMinimum
+                          ? "border-border/50 bg-surface-overlay/40"
+                          : "border-red-500/30 bg-red-500/10"
+                      }`}
+                    >
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                        Your purse
+                      </span>
+                      <span
+                        className={`text-lg font-bold tabular-nums ${canAffordMinimum ? "text-green-400" : "text-red-400"}`}
+                      >
+                        ₹{(remainingBudget ?? 0).toLocaleString()}
+                      </span>
+                    </div>
                   </div>
+
+                  {!canAffordMinimum && (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <p>
+                        Your remaining purse cannot cover the minimum bid on this item. You can still
+                        compete for later items.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {quickBids.map((quick) => {
@@ -674,11 +720,14 @@ export function AuctionPage() {
                         {p.username.charAt(0).toUpperCase()}
                       </div>
                       <div className="overflow-hidden">
-                        <p className="font-semibold text-text-primary truncate">
+                        <p className="font-semibold text-text-primary truncate leading-tight">
                           {p.username}
                           {p.username === sessionUsername && (
                             <span className="ml-1 text-[8px] text-text-muted">(You)</span>
                           )}
+                        </p>
+                        <p className="text-[10px] tabular-nums text-text-muted">
+                          ₹{(p.budget - p.spent).toLocaleString()} left
                         </p>
                       </div>
                     </div>

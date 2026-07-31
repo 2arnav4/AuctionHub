@@ -48,7 +48,15 @@ async function seed(): Promise<void> {
   });
 
   const code = await generateUniqueRoomCode();
-  const room = new Room({ code, name: "Rare Collectibles — Demo Auction", status: "lobby" });
+  // Comfortably above the catalog total, so a walkthrough can show the purse
+  // shrinking without a bidder running out mid-demo.
+  const startingBudget = 150_000;
+  const room = new Room({
+    code,
+    name: "Rare Collectibles — Demo Auction",
+    status: "lobby",
+    startingBudget,
+  });
   await room.save();
 
   const sessionToken = crypto.randomUUID();
@@ -59,6 +67,8 @@ async function seed(): Promise<void> {
     usernameNormalized: hostName.toLowerCase(),
     role: "admin",
     sessionToken,
+    budget: startingBudget,
+    spent: 0,
   });
   await host.save();
 

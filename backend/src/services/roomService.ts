@@ -4,6 +4,7 @@ import { Participant } from "../models/participantModel.js";
 import { AuctionItem } from "../models/itemModel.js";
 import { generateUniqueRoomCode } from "../utils/codeGenerator.js";
 import { AppError } from "../middleware/errorHandler.js";
+import { env } from "../config/env.js";
 
 function isDuplicateKeyError(error: unknown): boolean {
   return (
@@ -17,12 +18,21 @@ function isDuplicateKeyError(error: unknown): boolean {
 /**
  * Creates an auction room and sets the creator as the admin participant.
  */
-export async function createRoom(username: string, roomName: string) {
+export async function createRoom(
+  username: string,
+  roomName: string,
+  startingBudget?: number,
+) {
   if (!username?.trim()) {
     throw new AppError("Username is required", 400);
   }
   if (!roomName?.trim()) {
     throw new AppError("Room name is required", 400);
+  }
+
+  const budget = startingBudget ?? env.defaultStartingBudget;
+  if (!Number.isFinite(budget) || budget <= 0) {
+    throw new AppError("Starting budget must be a positive number.", 400);
   }
 
   // 1. Generate unique room code
@@ -33,10 +43,12 @@ export async function createRoom(username: string, roomName: string) {
     code,
     name: roomName.trim(),
     status: "lobby",
+    startingBudget: budget,
   });
   await room.save();
 
-  // 3. Create the admin participant
+  // 3. Create the admin participant. The host is given a purse too so the
+  // record is uniform, but it is never spent — hosts cannot bid.
   const sessionToken = crypto.randomUUID();
   const participant = new Participant({
     roomId: room._id,
@@ -44,6 +56,8 @@ export async function createRoom(username: string, roomName: string) {
     usernameNormalized: username.trim().toLowerCase(),
     role: "admin",
     sessionToken,
+    budget,
+    spent: 0,
   });
   await participant.save();
 
@@ -100,6 +114,9 @@ export async function joinRoom(code: string, username: string) {
     usernameNormalized: normalizedUsername,
     role: "participant",
     sessionToken,
+    // Copied, not referenced: a bidder's purse is fixed at the moment they join.
+    budget: room.startingBudget,
+    spent: 0,
   });
 
   // The check above is a read-then-write race: two joins claiming the same name

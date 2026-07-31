@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { env } from "./env.js";
 import { Participant } from "../models/participantModel.js";
+import { Room } from "../models/roomModel.js";
 
 const INITIAL_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 30_000;
@@ -43,6 +44,25 @@ async function migrateParticipantUsernameKeys(): Promise<void> {
   await Participant.createIndexes();
 }
 
+/**
+ * Backfills purse fields onto documents written before budgets existed.
+ *
+ * `startingBudget` is required on the room schema, so a room created earlier
+ * would fail validation the moment anything saved it — which is exactly what
+ * starting its auction does. Adding a required field to a collection that
+ * already has rows is a migration, not a schema edit.
+ */
+async function migrateBudgets(): Promise<void> {
+  await Room.collection.updateMany(
+    { startingBudget: { $exists: false } },
+    { $set: { startingBudget: env.defaultStartingBudget } },
+  );
+  await Participant.collection.updateMany(
+    { budget: { $exists: false } },
+    { $set: { budget: env.defaultStartingBudget, spent: 0 } },
+  );
+}
+
 function registerConnectionLogging(): void {
   mongoose.connection.on("connected", () => {
     console.log("Successfully connected to MongoDB.");
@@ -80,6 +100,7 @@ export async function connectDB(): Promise<void> {
         dbName: env.mongodbDbName,
       });
       await migrateParticipantUsernameKeys();
+      await migrateBudgets();
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

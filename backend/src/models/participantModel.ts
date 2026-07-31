@@ -6,6 +6,10 @@ export interface IParticipant extends Document {
   usernameNormalized: string;
   role: "admin" | "participant";
   sessionToken: string;
+  /** Purse copied from the room at join time, so a later room edit cannot move it. */
+  budget: number;
+  /** Total won so far. Remaining purse is budget - spent. */
+  spent: number;
   isConnected: boolean;
   joinedAt: Date;
 }
@@ -37,6 +41,16 @@ const ParticipantSchema = new Schema<IParticipant>({
     type: String,
     required: true,
     unique: true,
+  },
+  budget: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
+  spent: {
+    type: Number,
+    required: true,
+    default: 0,
   },
   isConnected: {
     type: Boolean,

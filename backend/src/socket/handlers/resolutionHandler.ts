@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io";
 import { env } from "../../config/env.js";
 import { Room } from "../../models/roomModel.js";
 import { AuctionItem, type IAuctionItem } from "../../models/itemModel.js";
+import { Participant } from "../../models/participantModel.js";
 import { getAuctionEndsAt, getExpiryResolution } from "../../utils/auction.js";
 
 type Resolution = "sold" | "unsold";
@@ -138,9 +139,21 @@ async function resolveActiveItem(
   );
   if (!resolvedItem) return null;
 
+  // Charge the winner only once the sale is final. Committing at bid time would
+  // mean refunding every outbid participant, and a refund that fails leaves the
+  // purse wrong; charging at resolution has exactly one writer per item.
+  let winner = null;
+  if (resolution === "sold" && resolvedItem.highestBidderId) {
+    winner = await Participant.findOneAndUpdate(
+      { _id: resolvedItem.highestBidderId },
+      { $inc: { spent: resolvedItem.currentBid } },
+      { new: true },
+    ).select("-sessionToken");
+  }
+
   clearAuctionTimer(roomId);
   const socketRoomId = `room:${room.code}`;
-  io.to(socketRoomId).emit("item:ended", { item: resolvedItem, resolution });
+  io.to(socketRoomId).emit("item:ended", { item: resolvedItem, resolution, winner });
   await progressAuction(io, roomId);
 
   return resolvedItem;

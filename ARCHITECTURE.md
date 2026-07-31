@@ -50,7 +50,7 @@ Socket connections are room-scoped. The client sends a per-room `sessionToken` d
 | Event Name | Direction | Payload | Description |
 |---|---|---|---|
 | `room:connect` | Client → Server | *None* | Sent after every connect. Identity comes from the handshake, so no payload is needed. Triggers a full state synchronization. |
-| `room:state` | Server → Client | `{ room, participants, activeItem, bids, items }` | Sent only to the requesting socket. `activeItem` and `bids` are populated when the room is live. |
+| `room:state` | Server → Client | `{ room, participants, activeItem, bids, items, serverTime }` | Sent only to the requesting socket. `activeItem` and `bids` are populated when the room is live; `serverTime` lets the client measure its clock offset. |
 | `participant:joined` | Server → Client | `{ participant }` | Broadcast to the rest of the room when a bidder comes online. Not re-sent for a second tab. |
 | `participant:left` | Server → Client | `{ participant }` | Broadcast when a bidder's last socket disconnects. |
 | `item:added` | Server → Client | `{ item }` | Emitted from the REST item handler so lobby catalogs update without a refetch. |
@@ -66,7 +66,7 @@ Socket connections are room-scoped. The client sends a per-room `sessionToken` d
 | `bid:rejected` | Server → Client | `{ reason: string, minimumBid: number }` | Sent only to the submitting socket. |
 | `item:sell` | Client → Server | *None* | Host only. Requires at least one accepted bid. |
 | `item:unsold` | Client → Server | *None* | Host only. Clears any recorded highest bidder. |
-| `item:ended` | Server → Client | `{ item, resolution: "sold" \| "unsold" }` | The item was resolved, by the host or by expiry. |
+| `item:ended` | Server → Client | `{ item, resolution: "sold" \| "unsold", winner }` | The item was resolved, by the host or by expiry. `winner` is the debited participant on a sale, `null` otherwise. |
 | `auction:completed` | Server → Client | `{ room }` | No pending items remain; clients redirect to results. |
 | `error` | Server → Client | `{ message: string }` | Sent only to the offending socket for authorization and lifecycle failures. |
 
@@ -86,8 +86,10 @@ const updatedItem = await AuctionItem.findOneAndUpdate(
   {
     _id: activeItem._id,
     status: "active",
+    isPaused: false,
     endsAt: { $gt: new Date() },
-    currentBid: { $lt: amount },
+    startingBid: { $lte: amount },   // may open at the asking price
+    currentBid: { $lt: amount },     // must beat the standing highest
   },
   {
     $set: {
@@ -175,10 +177,20 @@ Three properties fall out of this:
 
 Restart recovery skips paused rooms entirely: with no deadline there is nothing to count down, and the host's resume is what re-arms the timer.
 
-### 5. Presence After a Restart
+### 5. Budgets: Validate at Bid Time, Charge at Sale Time
+
+Every bidder holds a purse (`budget`) and a running total (`spent`). A bid is rejected if it exceeds `budget - spent`; the winner is debited with a single `$inc` when the item resolves as sold.
+
+**Why not reserve funds when the bid is placed?** Because every outbid participant would then need a refund, and a refund that fails leaves a purse permanently wrong. Charging at resolution means exactly one writer per item and no compensating transaction.
+
+**Why is the budget check outside the atomic claim?** The claim operates on the item; the purse lives on the participant, and a single `findOneAndUpdate` cannot condition on both. That is safe here only because **exactly one item is live at a time**, so a bidder can hold at most one outstanding commitment. `spent` cannot move between the check and the claim except by an item resolving — which would fail the claim anyway on `status: "active"`.
+
+That assumption is load-bearing. Auctioning several items simultaneously would break it: two bids could each pass the check and together exceed the purse. The fix then is a conditional decrement on the participant, `{ _id, $expr: { $gte: [{ $subtract: ["$budget", "$spent"] }, amount] } }`, reserving at bid time and refunding on outbid — which is precisely the complexity the sequential design avoids.
+
+### 6. Presence After a Restart
 Presence is tracked two ways: an in-memory map of participant id to live socket ids, which allows multiple tabs without duplicate join broadcasts, and an `isConnected` flag persisted on the participant so `room:state` can render the roster. A restart loses the map but not the flag, which would leave every previous bidder shown as permanently online. Startup therefore clears all `isConnected` flags before restoring timers; live clients re-register on their next `room:connect`.
 
-### 6. Database Availability
+### 7. Database Availability
 MongoDB is treated as a runtime dependency, not a startup precondition. The HTTP port binds first and the connection retries with exponential backoff, so an unreachable database degrades the API instead of failing the deploy. While disconnected, both entry points refuse work at the door — REST returns `503` and the socket handshake rejects with the same explanation — rather than letting queries sit in Mongoose's buffer until it times out.
 
 ---

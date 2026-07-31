@@ -26,6 +26,7 @@ export interface Room {
   code: string;
   name: string;
   status: "lobby" | "live" | "completed";
+  startingBudget: number;
   adminParticipantId?: string | null;
   endsAt?: string | null;
   isPaused?: boolean;
@@ -40,6 +41,9 @@ export interface Participant {
   username: string;
   role: "admin" | "participant";
   sessionToken?: string;
+  /** Purse fixed at join time. Remaining is budget - spent. */
+  budget: number;
+  spent: number;
   isConnected: boolean;
   joinedAt: string;
 }
@@ -165,12 +169,13 @@ export async function checkAuth(): Promise<{ user: AuthResponse | null }> {
 
 export async function createRoom(
   username: string,
-  roomName: string
+  roomName: string,
+  startingBudget?: number
 ): Promise<RoomResponse> {
   const response = await fetch(`${API_URL}/rooms`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ username, roomName }),
+    body: JSON.stringify({ username, roomName, startingBudget }),
     credentials: "include",
   });
 

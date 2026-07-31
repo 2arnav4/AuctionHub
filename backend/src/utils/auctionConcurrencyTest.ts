@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { env } from "../config/env.js";
 import { AuctionItem } from "../models/itemModel.js";
 import { Room } from "../models/roomModel.js";
+import { Participant } from "../models/participantModel.js";
 
 /**
  * Integration tests for the concurrency control the auction depends on.
@@ -32,6 +33,7 @@ before(async () => {
       code: `T${Date.now().toString(36).slice(-5).toUpperCase()}`,
       name: "Concurrency Test Room",
       status: "live",
+      startingBudget: 1_000_000,
     });
     roomId = room._id as mongoose.Types.ObjectId;
   } catch {
@@ -221,6 +223,46 @@ test("a paused item cannot be expired by a timer", async (t) => {
     { new: true },
   );
   assert.equal(expiry, null, "a pause must survive indefinitely without expiring");
+});
+
+test("a winner is charged exactly once, even if two resolutions race", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const bidder = await Participant.create({
+    roomId,
+    username: `budget_${Date.now().toString(36)}`,
+    usernameNormalized: `budget_${Date.now().toString(36)}`,
+    role: "participant",
+    sessionToken: `tok_${Date.now()}_${Math.random()}`,
+    budget: 10_000,
+    spent: 0,
+  });
+
+  const item = await AuctionItem.create({
+    roomId,
+    name: "Charged Once",
+    startingBid: 100,
+    currentBid: 4_000,
+    highestBidderId: bidder._id,
+    status: "active",
+    endsAt: new Date(Date.now() - 1_000),
+  });
+
+  // Both a host sell and a timer expiry fire at the same instant. Only the one
+  // that claims the item may charge the winner.
+  const resolutions = await Promise.all([
+    AuctionItem.findOneAndUpdate({ _id: item._id, status: "active" }, { $set: { status: "sold" } }, { new: true }),
+    AuctionItem.findOneAndUpdate({ _id: item._id, status: "active" }, { $set: { status: "sold" } }, { new: true }),
+  ]);
+  const winners = resolutions.filter((result) => result !== null);
+  assert.equal(winners.length, 1, "only one resolution may claim the item");
+
+  await Participant.updateOne({ _id: bidder._id }, { $inc: { spent: winners[0]!.currentBid } });
+
+  const charged = await Participant.findById(bidder._id);
+  assert.equal(charged?.spent, 4_000, "the purse must be debited once, not twice");
+  assert.equal((charged!.budget - charged!.spent), 6_000, "remaining purse must reflect a single sale");
+
+  await Participant.deleteOne({ _id: bidder._id });
 });
 
 test("an expiry does claim an item whose deadline has genuinely passed", async (t) => {

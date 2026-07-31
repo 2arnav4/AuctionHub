@@ -36,6 +36,7 @@ Roles are per-room, not global: whoever creates a room is that room's host, and 
 - **Rooms by code** — create a room, share a six-character code, join from anywhere.
 - **Host and bidder roles** — assigned server-side at room creation or join and encoded in a room-scoped session token.
 - **Catalog preparation** — the host adds items while the room is in the lobby; every connected client sees them appear live.
+- **Bidder budgets** — every bidder starts with the same purse, set when the room is created. A bid cannot exceed what is left, and the winner is debited only when the sale is final, so the auction is a contest of allocation rather than of who types the biggest number.
 - **Atomic concurrent bidding** — simultaneous bids are resolved by a single conditional MongoDB update, so exactly one can win.
 - **Anti-snipe countdown** — an accepted bid restarts the item's countdown, so a last-second bid cannot win uncontested.
 - **Server-owned timers** — deadlines are stored as absolute timestamps and rebuilt on boot, so a restart mid-auction resumes rather than resets.
@@ -133,6 +134,7 @@ The concurrency tests run against whatever `MONGODB_URI` points at and skip them
 | `MONGODB_URI` | no | `mongodb://localhost:27017/auction-room` | Connection string. Any database segment in the path is ignored — `MONGODB_DB_NAME` decides. |
 | `MONGODB_DB_NAME` | no | `auction` | Database to use. Set explicitly because a connection string without a database segment silently resolves to `test`, which is how production data ends up somewhere nobody intended. |
 | `AUCTION_ITEM_DURATION_SECONDS` | no | `60` | Countdown per item, and the amount an accepted bid restores it to. |
+| `DEFAULT_STARTING_BUDGET` | no | `100000` | Purse each bidder starts with when a room does not specify one. |
 | `JWT_SECRET` | **yes in production** | dev-only fallback | Signing key. Startup fails if unset when `NODE_ENV=production`. |
 
 **`frontend/.env`**
@@ -203,7 +205,7 @@ To see the concurrency handling directly, open two bidder windows and submit the
 
 - Redis adapter and a distributed scheduler for multi-instance deployment.
 - Integration tests for concurrent bids and resolution races.
-- Team budgets and per-bidder spend caps.
+- Team squads and per-category caps on top of the existing per-bidder budget.
 - Bounded anti-snipe: cap total extensions, or reset to a shorter window than the opening one.
 - Spectator (read-only) role.
 - Chat and reactions in the auction room.

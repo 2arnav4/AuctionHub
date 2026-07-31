@@ -112,7 +112,15 @@ export function useSocket(roomCode: string) {
         : current);
       setBidError(null);
     };
-    const handleItemEnded = () => {
+    const handleItemEnded = (data: { winner?: Participant | null }) => {
+      // The winner's purse changed as part of the sale, so patch it here rather
+      // than waiting for the next full state sync.
+      if (data?.winner) {
+        setParticipants((current) => current.map((participant) =>
+          participant._id === data.winner!._id
+            ? { ...participant, spent: data.winner!.spent }
+            : participant));
+      }
       setActiveItem(null);
       setBids([]);
       setBidError(null);

@@ -1,6 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import { AuctionItem } from "../../models/itemModel.js";
 import { Bid } from "../../models/bidModel.js";
+import { Participant } from "../../models/participantModel.js";
 import { Room } from "../../models/roomModel.js";
 import { isValidPositiveAmount } from "../../utils/auction.js";
 import { env } from "../../config/env.js";
@@ -81,7 +82,32 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 3. Validate bid amount. The first bid may match the asking price
+      // 3a. Budget. Read fresh rather than trusting socket.data, which is a
+      // snapshot from the handshake and predates every item won since.
+      //
+      // Checked here rather than inside the atomic claim because the claim
+      // operates on the item, not the participant. That is safe only because
+      // exactly one item is live at a time, so a bidder can hold at most one
+      // outstanding commitment: `spent` cannot move between this check and the
+      // claim except by an item resolving, which would fail the claim anyway.
+      // Bidding on several items at once would need a conditional decrement on
+      // the participant instead.
+      const freshParticipant = await Participant.findById(participant._id);
+      if (!freshParticipant) {
+        socket.emit("bid:rejected", { reason: "Your participant record no longer exists.", minimumBid: 1 });
+        return;
+      }
+
+      const remainingBudget = freshParticipant.budget - freshParticipant.spent;
+      if (amount > remainingBudget) {
+        socket.emit("bid:rejected", {
+          reason: `That exceeds your remaining purse of ₹${remainingBudget.toLocaleString("en-IN")}.`,
+          minimumBid: Math.max(activeItem.startingBid, activeItem.currentBid + 1),
+        });
+        return;
+      }
+
+      // 3b. Validate bid amount. The first bid may match the asking price
       // exactly; every later bid must beat the standing highest.
       const minimumBidRequired = Math.max(activeItem.startingBid, activeItem.currentBid + 1);
       if (amount < minimumBidRequired) {
