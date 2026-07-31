@@ -5,6 +5,15 @@ import { AuctionItem } from "../models/itemModel.js";
 import { generateUniqueRoomCode } from "../utils/codeGenerator.js";
 import { AppError } from "../middleware/errorHandler.js";
 
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === 11000
+  );
+}
+
 /**
  * Creates an auction room and sets the creator as the admin participant.
  */
@@ -92,7 +101,19 @@ export async function joinRoom(code: string, username: string) {
     role: "participant",
     sessionToken,
   });
-  await participant.save();
+
+  // The check above is a read-then-write race: two joins claiming the same name
+  // can both pass it. The compound unique index is the real guard, so translate
+  // its duplicate-key error into the message the pre-check would have produced
+  // rather than letting a generic conflict reach the client.
+  try {
+    await participant.save();
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      throw new AppError(`Username "${username.trim()}" is already taken in this room`, 409);
+    }
+    throw error;
+  }
 
   return {
     room,

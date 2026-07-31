@@ -66,6 +66,10 @@ const AuctionItemSchema = new Schema<IAuctionItem>(
   }
 );
 
+// Supports both the catalog listing and the conditional claim of the next
+// pending item, which sorts by creation order while filtering on room and status.
+AuctionItemSchema.index({ roomId: 1, status: 1, createdAt: 1 });
+
 export const AuctionItem = mongoose.model<IAuctionItem>(
   "AuctionItem",
   AuctionItemSchema

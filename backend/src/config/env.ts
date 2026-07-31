@@ -23,7 +23,7 @@ function getPositiveInteger(key: string, fallback: string): number {
 const nodeEnv = getEnv("NODE_ENV", "development");
 
 export const env = {
-  port: Number(getEnv("PORT", "3001")),
+  port: getPositiveInteger("PORT", "3001"),
   nodeEnv,
   clientUrl: getEnv("CLIENT_URL", "http://localhost:5173"),
   mongodbUri: getEnv("MONGODB_URI", "mongodb://localhost:27017/auction-room"),
