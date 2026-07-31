@@ -49,20 +49,22 @@ Socket connections are room-scoped. The client sends a per-room `sessionToken` d
 
 | Event Name | Direction | Payload | Description |
 |---|---|---|---|
-| `room:connect` | Client → Server | `RoomConnectPayload` | Re-establishes a room session, triggering a full state synchronization. |
-| `room:state` | Server → Client | `RoomStatePayload` | Emitted immediately after room connection; contains active item, participants list, and current bids. |
-| `participant:joined` | Server → Client | `Participant` | Sent to the room channel when a new bidder connects. |
-| `participant:left` | Server → Client | `Participant` | Sent to the room channel when a bidder disconnects or closes their tab. |
-| `auction:start` | Client → Server | *None* | Emitted by the host to activate the auction lifecycle. |
-| `auction:started` | Server → Client | *None* | Signals all participants in the room to transition from the Lobby to the Auction board. |
-| `item:activated` | Server → Client | `AuctionItem` | Broadcasts details of the current active item and the synchronized countdown `endsAt`. |
-| `bid:place` | Client → Server | `{ amount: number }` | Submitted by bidders to place a bid. |
-| `bid:accepted` | Server → Client | `{ item: AuctionItem, bids: Bid[] }` | Broadcasts the updated highest bid and history to all room participants. |
-| `bid:rejected` | Server → Client | `{ reason: string, minimumBid: number }` | Sent privately to the sender socket when a bid fails validation. |
-| `item:sell` | Client → Server | *None* | Emitted by the host to manually resolve the active item as "sold". |
-| `item:unsold` | Client → Server | *None* | Emitted by the host to manually resolve the active item as "unsold". |
-| `item:ended` | Server → Client | `{ item: AuctionItem, resolution: "sold" \| "unsold" }` | Signals that the active item is resolved. |
-| `auction:completed` | Server → Client | *None* | Signals that all catalog items are resolved and redirect participants to the results dashboard. |
+| `room:connect` | Client → Server | *None* | Sent after every connect. Identity comes from the handshake, so no payload is needed. Triggers a full state synchronization. |
+| `room:state` | Server → Client | `{ room, participants, activeItem, bids, items }` | Sent only to the requesting socket. `activeItem` and `bids` are populated when the room is live. |
+| `participant:joined` | Server → Client | `{ participant }` | Broadcast to the rest of the room when a bidder comes online. Not re-sent for a second tab. |
+| `participant:left` | Server → Client | `{ participant }` | Broadcast when a bidder's last socket disconnects. |
+| `item:added` | Server → Client | `{ item }` | Emitted from the REST item handler so lobby catalogs update without a refetch. |
+| `auction:start` | Client → Server | *None* | Host only. Moves the room from `lobby` to `live`. |
+| `auction:started` | Server → Client | `{ room }` | Tells every client to move from the lobby to the auction board. |
+| `item:activated` | Server → Client | `{ item, startedAt, endsAt }` | The new active item plus the server's clock at activation and the absolute deadline. |
+| `bid:place` | Client → Server | `{ amount: number }` | Bidders only. Hosts are rejected. |
+| `bid:accepted` | Server → Client | `{ bid, item }` | Broadcast to the room. `item` carries the new highest bid and the extended `endsAt`. |
+| `bid:rejected` | Server → Client | `{ reason: string, minimumBid: number }` | Sent only to the submitting socket. |
+| `item:sell` | Client → Server | *None* | Host only. Requires at least one accepted bid. |
+| `item:unsold` | Client → Server | *None* | Host only. Clears any recorded highest bidder. |
+| `item:ended` | Server → Client | `{ item, resolution: "sold" \| "unsold" }` | The item was resolved, by the host or by expiry. |
+| `auction:completed` | Server → Client | `{ room }` | No pending items remain; clients redirect to results. |
+| `error` | Server → Client | `{ message: string }` | Sent only to the offending socket for authorization and lifecycle failures. |
 
 ---
 
@@ -71,70 +73,98 @@ Socket connections are room-scoped. The client sends a per-room `sessionToken` d
 Handling highly concurrent live bids and timer-expiration states is a core requirement of a robust auction engine. The system achieves complete correctness using server-authoritative logic and atomic database updates.
 
 ### 1. Atomic Bids (`findOneAndUpdate`)
-When multiple bidders submit identical or incremental bids simultaneously, standard read-then-write patterns can cause double-bidding or accepting a bid below the minimum.
-To prevent this, the server processes bids using a single conditional MongoDB query:
+When multiple bidders submit identical or incremental bids simultaneously, a read-then-write pattern can accept two winners or a bid below the current minimum. The server instead resolves each bid with one conditional update:
+
 ```typescript
+const newEndsAt = new Date(Date.now() + env.auctionItemDurationSeconds * 1000);
+
 const updatedItem = await AuctionItem.findOneAndUpdate(
   {
-    _id: itemId,
+    _id: activeItem._id,
     status: "active",
     endsAt: { $gt: new Date() },
-    currentBid: { $lt: amount }
+    currentBid: { $lt: amount },
   },
   {
     $set: {
       currentBid: amount,
-      highestBidderId: participantId
-    }
+      highestBidderId: participant._id,
+      highestBidderUsername: participant.username,
+      endsAt: newEndsAt,
+    },
   },
-  { new: true }
+  { new: true },
 );
 ```
-Only one database execution can succeed in updating the document first; any concurrent execution racing against the same or lower amount will fail to match the query filter (`currentBid: { $lt: amount }`) and will return `null`. The loser is rejected gracefully and receive a `bid:rejected` event with the updated current minimum bid.
+
+Only one execution can match `currentBid: { $lt: amount }`; any concurrent bid at the same or a lower amount fails the filter and returns `null`. The loser receives `bid:rejected` with the new minimum.
+
+The same update extends the deadline. An accepted bid restores the full countdown, so a bid landing in the final second cannot win uncontested — see [DECISIONS.md](DECISIONS.md) for that trade-off.
+
+**Write ordering.** The `bids` collection is an append-only log, and an entry is written *only after* the claim succeeds. Writing it first and deleting it on failure would make a rejected bid briefly readable by a concurrent `room:connect`, and would orphan it permanently if the process died between the write and the compensating delete.
 
 ### 2. Item Resolution Races
-An active item can be resolved in three ways:
-1. The countdown timer expires naturally.
-2. The Host clicks "Sell" manually.
-3. The Host clicks "Mark Unsold" manually.
+An active item can be resolved three ways: the countdown expires, the host sells, or the host marks it unsold. The transition is claimed conditionally so only one can win:
 
-To prevent multiple resolutions from firing, the resolution state transition is also atomic:
 ```typescript
+const claim: Record<string, unknown> = { _id: activeItem._id, status: "active" };
+
+// An expiry must also prove the deadline has actually elapsed.
+if (requestedResolution === "expired") {
+  claim.endsAt = { $lte: new Date() };
+}
+
 const resolvedItem = await AuctionItem.findOneAndUpdate(
-  {
-    _id: itemId,
-    status: "active"
-  },
-  {
-    $set: {
-      status: resolution,
-      endsAt: new Date()
-    }
-  },
-  { new: true }
+  claim,
+  { $set: update },
+  { new: true },
 );
 ```
-If the timer expires at the exact millisecond the host clicks "Sell", only one update operation transitions the status from `"active"` to `"sold"` (or `"unsold"`). The subsequent request will fail to match `status: "active"` and will instantly no-op, avoiding duplicate catalog progression or data corruption.
+
+If the timer fires at the same millisecond the host clicks Sell, exactly one update moves the status off `"active"`; the other fails the filter and no-ops, so the catalog cannot advance twice.
+
+The extra `endsAt` condition on the expiry path closes a subtler race. A bid accepted moments before expiry pushes `endsAt` into the future and reschedules the timer — but `clearTimeout` cannot recall a callback that has already fired and is awaiting its database reads. Without the elapsed-deadline check, that stale callback still matches on status alone and ends an item the bid had just extended, cutting short the very countdown the extension exists to protect. Host-initiated resolutions stay unconditional, because ending an item early is exactly what the host is asking for.
+
+If an expiry loses the claim because the deadline moved, the callback re-arms a timer from the persisted deadline, so an active item is never left without one.
 
 ### 3. Server Resiliency & Timer Restoration
-To avoid losing countdown timers on server crashes or restarts, the system saves the absolute `endsAt` timestamp of the active item to MongoDB. 
-Upon startup, the server automatically queries all active rooms and schedules in-memory timeouts matching the remaining duration:
+Timers are in-memory, but deadlines are persisted as absolute timestamps. On boot the server rebuilds a timer for every live room:
+
 ```typescript
-// On server boot:
-const liveRooms = await Room.find({ status: "live" });
+const liveRooms = await Room.find({
+  status: "live",
+  currentItemId: { $ne: null },
+});
+
 for (const room of liveRooms) {
-  if (room.currentItemId && room.endsAt) {
-    const remainingMs = room.endsAt.getTime() - Date.now();
-    scheduleAuctionTimer(io, room._id.toString(), Math.max(0, remainingMs));
-  }
+  const endsAt = room.endsAt ?? getAuctionEndsAt(Date.now(), env.auctionItemDurationSeconds);
+  scheduleAuctionTimer(io, room._id.toString(), endsAt);
 }
 ```
+
+A deadline already in the past yields a zero delay, so the item resolves immediately on startup rather than hanging.
+
+### 4. Presence After a Restart
+Presence is tracked two ways: an in-memory map of participant id to live socket ids, which allows multiple tabs without duplicate join broadcasts, and an `isConnected` flag persisted on the participant so `room:state` can render the roster. A restart loses the map but not the flag, which would leave every previous bidder shown as permanently online. Startup therefore clears all `isConnected` flags before restoring timers; live clients re-register on their next `room:connect`.
+
+### 5. Database Availability
+MongoDB is treated as a runtime dependency, not a startup precondition. The HTTP port binds first and the connection retries with exponential backoff, so an unreachable database degrades the API instead of failing the deploy. While disconnected, both entry points refuse work at the door — REST returns `503` and the socket handshake rejects with the same explanation — rather than letting queries sit in Mongoose's buffer until it times out.
 
 ---
 
 ## Database Schema
 
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                            users                            │
+│  Global accounts. Not linked to rooms: identity is global,  │
+│  room role is not.                                          │
+├─────────────────────┬──────────────────┬────────────────────┤
+│ username (String)   │ passwordHash     │ salt (String)      │
+│ usernameNormalized  │                  │                    │
+│   (String, UQ)      │                  │                    │
+└─────────────────────┴──────────────────┴────────────────────┘
+
 ┌─────────────────────────────────────────────────────────────┐
 │                           rooms                             │
 ├─────────────────────┬──────────────────┬────────────────────┤
@@ -168,5 +198,7 @@ for (const room of liveRooms) {
 └─────────────────────┴──────────────────┴────────────────────┘
 ```
 
-- **Unique Constraints**: `participants` has a compound unique index on `{ roomId, usernameNormalized }` to enforce unique nicknames within a room while allowing nick reuse across other rooms.
-- **Session Security**: The host/bidder role is assigned server-side during room creation/joining and encoded inside a cryptographically secure `sessionToken`, which must match the participant record during socket handshakes.
+- **Unique constraints**: `participants` carries a compound unique index on `{ roomId, usernameNormalized }`, enforcing unique names within a room while allowing the same name across rooms. The application also pre-checks for a taken name, but that check is a read-then-write race; the index is the real guard and its duplicate-key error is translated back into the same message.
+- **Supporting indexes**: `{ itemId, createdAt }` on `bids` for the newest-first log, and `{ roomId, status, createdAt }` on `auctionitems` for the catalog listing and the conditional claim of the next pending item.
+- **Session security**: The host/bidder role is assigned server-side at room creation or join and bound to a random `sessionToken`, which must match a participant record during the socket handshake. The token is stripped from every participant list sent to clients.
+- **Two identity layers**: the JWT cookie identifies the account across the app; the `sessionToken` identifies membership and role inside one room. They are deliberately separate so one account can host one room and bid in another.

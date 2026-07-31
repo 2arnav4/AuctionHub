@@ -22,7 +22,10 @@ This document outlines key technical decisions, architectural trade-offs, and de
 ### Rationale
 - **Prevention of Cheat/Exploits:** If the countdown is client-driven, a malicious bidder could delay their local clock to submit bids after the timer should have expired. By storing `endsAt` on the server and executing the expiration on a server-owned `setTimeout`, cheating is eliminated.
 - **Restoration Resiliency:** Because `endsAt` is stored as an absolute UTC date in MongoDB, a server crash or database disconnection does not reset the timer duration when the backend restarts. The server simply query active rooms and schedules the timer for `endsAt - now`.
-- **Clock Drift Mitigation:** Bids are validated against the server's database time. Clients receive the target `endsAt` and count down locally relative to their own system clock. If a client's system clock is drifted, the backend's strict verification still prevents late bids.
+- **Clock Drift Mitigation:** Bids are validated against the server's clock inside the conditional update (`endsAt: { $gt: new Date() }`), so a drifted client cannot buy itself extra time.
+
+### Known gap
+Drift protection is one-directional. The server refuses late bids, but the client decides when to *hide* the bid form, using its own clock against the server's `endsAt`. A client running significantly fast therefore hides the input while the server would still accept a bid — the honest-user mirror of the cheat this design prevents. `item:activated` already carries the server's clock at activation (`startedAt`), which is the raw material for an offset correction; it is currently unused.
 
 ---
 
@@ -38,17 +41,35 @@ This document outlines key technical decisions, architectural trade-offs, and de
 
 ## 4. Authentication Architecture: Dual-Layer Auth
 
-**Decision:** The application employs a two-tier authentication structure:
-1. **Global Authentication (JWT Cookie):** Tracks global identity (`admin`, `demo`, or guest) and protects backend endpoints.
-2. **Room Session Authorization (`sessionToken`):** Issued on room creation or join, and stored in the client session. It determines the role (`admin` or `participant`) in that specific room.
+**Decision:** The application employs a two-tier identity structure:
+1. **Global identity (JWT cookie):** Identifies the account across the app. Issued on register or login, stored as an HTTP-only cookie.
+2. **Room authorization (`sessionToken`):** Issued on room creation or join. Determines the role — `admin` or `participant` — inside that specific room.
 
 ### Rationale
-- **Decoupled Roles:** A user may be logged in globally as `admin` but join another host's room as a `participant` (bidder). Decoupling room-specific roles from the global auth token allows participants to play different roles across different rooms without re-authenticating.
-- **Socket Handshake Security:** Socket.IO handshakes use the `sessionToken` to verify the socket's room eligibility, preventing unauthorized clients from listening to room channels.
+- **Decoupled Roles:** Room role is a property of membership, not of the account. The same user can host one room and bid in another without re-authenticating, and a role cannot leak between rooms.
+- **Socket Handshake Security:** Socket.IO handshakes carry the `sessionToken`, which is matched against a participant record before the socket is allowed into a room channel. Session tokens are stripped from every participant list sent to clients.
+- **Authorization lives with the room, not the cookie:** every privileged action — adding an item, starting the auction, resolving an item, placing a bid — is checked against the participant's role, not the JWT.
+
+### Known gap
+The JWT layer currently establishes *identity* but does not *gate* the room endpoints: `POST /api/rooms` and `POST /api/rooms/:code/join` run behind an optional-auth middleware that never rejects, and fall back to a username supplied in the request body. The UI always sends an authenticated request, so this is invisible in normal use, but the endpoints are callable without a cookie. Room reads (`GET /api/rooms/:code` and `/results`) are public by the same omission. Closing this means a `requireAuth` middleware on the two write routes and a deliberate decision about whether room reads should stay open.
 
 ---
 
-## 5. Single-Process In-Memory Timers (Trade-off & Scaling)
+## 5. Anti-Snipe: Every Accepted Bid Restarts the Countdown
+
+**Decision:** An accepted bid resets the item's deadline to a full `AUCTION_ITEM_DURATION_SECONDS` from the moment of acceptance, in the same atomic update that records the bid.
+
+### Rationale
+- **A fixed deadline rewards latency, not valuation.** With a hard cutoff, the winning strategy is to bid in the last possible instant, leaving no time for a counter-bid. The item then sells for less than someone was willing to pay, which is the wrong outcome for a host. Restarting the clock means an item only closes once nobody responds for a full window.
+- **It costs nothing extra.** The reset rides along in the `$set` of the update that already claims the highest bid, so it inherits that update's atomicity. There is no second write to keep consistent.
+
+### Trade-off
+- **Extension is unbounded.** Two determined bidders can keep an item open indefinitely; there is no cap on total extensions and no shrinking window. A production auction would either cap total duration or reset to a shorter window than the opening one — 10-15 seconds is typical — so bidding converges.
+- **It creates a race the fixed-deadline design does not have.** Extending a deadline means a timer that has already fired can be holding a stale view of the world. That is handled by requiring an elapsed deadline on the expiry path (see ARCHITECTURE.md, Concurrency §2), but it is complexity the simpler design would not have paid for.
+
+---
+
+## 6. Single-Process In-Memory Timers (Trade-off & Scaling)
 
 **Decision:** Active room timers are kept in memory using a simple Map of `NodeJS.Timeout` IDs keyed by Room ID.
 
