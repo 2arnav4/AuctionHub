@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { connectSocket, disconnectSocket } from "../services/socket";
+import { connectSocket } from "../services/socket";
 import { useSessionStore } from "../stores/useSessionStore";
 import type { AuctionItem, Bid, Participant, Room } from "../services/api";
 
@@ -130,7 +130,13 @@ export function useSocket(roomCode: string) {
       socket.off("bid:rejected", handleBidRejected);
       socket.off("item:ended", handleItemEnded);
       socket.off("auction:completed", handleAuctionCompleted);
-      disconnectSocket();
+
+      // Deliberately not disconnecting. Moving from the lobby to the auction
+      // unmounts this hook and immediately remounts it for the same room, and a
+      // teardown in between makes every other client watch that participant go
+      // offline and back online. connectSocket only replaces the socket when the
+      // room or participant actually changes, and the Leave Room handlers
+      // disconnect explicitly.
     };
   }, [roomCode, sessionToken]);
 
