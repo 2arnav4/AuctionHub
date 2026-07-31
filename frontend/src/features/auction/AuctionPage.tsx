@@ -43,6 +43,7 @@ export function AuctionPage() {
     room,
     participants,
     activeItem,
+    serverClockOffset,
     bids,
     bidError,
     setBidError,
@@ -64,10 +65,18 @@ export function AuctionPage() {
     }, 4000);
   }, []);
 
-  const minBidVal = activeItem ? (activeItem.currentBid ?? activeItem.startingBid ?? 0) + 1 : 1;
+  // The opening bid may match the asking price exactly; every later bid must
+  // beat the standing highest.
+  const minBidVal = activeItem
+    ? Math.max(activeItem.startingBid ?? 0, (activeItem.currentBid ?? 0) + 1)
+    : 1;
+  // currentBid is zero until someone actually bids, so it is only a real price
+  // once it is positive.
+  const highestBid = activeItem && activeItem.currentBid > 0 ? activeItem.currentBid : null;
+
   const endsAtMs = room?.endsAt ? Date.parse(room.endsAt) : Number.NaN;
   const secondsRemaining = Number.isFinite(endsAtMs)
-    ? Math.max(0, Math.ceil((endsAtMs - clockNow) / 1000))
+    ? Math.max(0, Math.ceil((endsAtMs - (clockNow + serverClockOffset)) / 1000))
     : 0;
 
   useEffect(() => {
@@ -155,11 +164,9 @@ export function AuctionPage() {
     if (!activeItem) return;
 
     const bidAmount = Number(bidVal);
-    const currentPrice = activeItem.currentBid ?? activeItem.startingBid ?? 0;
-    const minBidRequired = currentPrice + 1;
 
-    if (!Number.isFinite(bidAmount) || bidAmount < minBidRequired) {
-      setLocalBidErr(`Bid must be at least ₹${minBidRequired.toLocaleString()}`);
+    if (!Number.isFinite(bidAmount) || bidAmount < minBidVal) {
+      setLocalBidErr(`Bid must be at least ₹${minBidVal.toLocaleString()}`);
       return;
     }
 
@@ -315,7 +322,7 @@ export function AuctionPage() {
                 variant="primary"
                 className="flex-1 sm:flex-initial bg-green-500 hover:bg-green-600 border-green-500/20 text-zinc-950 font-bold text-xs"
               >
-                Sell Item (₹{(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString()})
+                Sell Item (₹{(highestBid ?? activeItem.startingBid ?? 0).toLocaleString()})
               </Button>
               <Button
                 onClick={handleMarkUnsold}
@@ -388,7 +395,7 @@ export function AuctionPage() {
                         Highest Bid
                       </span>
                       <span className="text-xl font-bold text-accent tracking-tight">
-                        ₹{(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString()}
+                        ₹{(highestBid ?? activeItem.startingBid ?? 0).toLocaleString()}
                       </span>
                       {activeItem.highestBidderUsername ? (
                         <span className="text-[10px] font-medium text-green-400 block mt-0.5 truncate">

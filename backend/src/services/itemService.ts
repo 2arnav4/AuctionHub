@@ -58,7 +58,10 @@ export async function createAuctionItem(
     name: name.trim(),
     description: description?.trim() || "",
     startingBid,
-    currentBid: startingBid,
+    // Zero, not startingBid: currentBid means "the highest bid actually placed".
+    // Seeding it with the asking price would make the first valid bid one rupee
+    // above the advertised figure, so nobody could open at the listed price.
+    currentBid: 0,
     status: "pending",
   });
   await newItem.save();

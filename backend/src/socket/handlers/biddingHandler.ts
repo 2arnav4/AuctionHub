@@ -73,8 +73,9 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 3. Validate bid amount (must be strictly higher than current bid)
-      const minimumBidRequired = activeItem.currentBid + 1;
+      // 3. Validate bid amount. The first bid may match the asking price
+      // exactly; every later bid must beat the standing highest.
+      const minimumBidRequired = Math.max(activeItem.startingBid, activeItem.currentBid + 1);
       if (amount < minimumBidRequired) {
         socket.emit("bid:rejected", {
           reason: `Bid amount is too low. Minimum required: ₹${minimumBidRequired}`,
@@ -100,6 +101,11 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
           _id: activeItem._id,
           status: "active",
           endsAt: { $gt: new Date() },
+          // Both floors are enforced here, not just in the check above, because
+          // the check above is a separate read and cannot be trusted under
+          // concurrency. currentBid starts at zero, so without the startingBid
+          // condition any positive amount would satisfy the filter.
+          startingBid: { $lte: amount },
           currentBid: { $lt: amount },
         },
         {
@@ -115,7 +121,9 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
 
       if (!updatedItem) {
         const latestItem = await AuctionItem.findById(activeItem._id);
-        const latestMinimumBid = latestItem ? latestItem.currentBid + 1 : 1;
+        const latestMinimumBid = latestItem
+          ? Math.max(latestItem.startingBid, latestItem.currentBid + 1)
+          : 1;
         const reason = latestItem?.endsAt && latestItem.endsAt <= new Date()
           ? "Bidding time has expired for this item."
           : `Bid amount is too low. Minimum required: ₹${latestMinimumBid}`;
