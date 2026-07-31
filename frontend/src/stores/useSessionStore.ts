@@ -15,11 +15,22 @@ export interface SessionState {
     participantId: string;
     role: "admin" | "participant";
   }) => void;
+  /** Clears the room membership but keeps the user signed in. */
+  clearRoomSession: () => void;
+  /** Clears room membership and the signed-in user. Used by logout. */
   clearSession: () => void;
   setAuthUser: (
     user: { username: string; role: "admin" | "participant" } | null,
   ) => void;
 }
+
+const EMPTY_ROOM_SESSION = {
+  roomCode: null,
+  sessionToken: null,
+  username: null,
+  participantId: null,
+  role: null,
+} as const;
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -31,15 +42,8 @@ export const useSessionStore = create<SessionState>()(
       role: null,
       authUser: null,
       setSession: (session) => set(session),
-      clearSession: () =>
-        set({
-          roomCode: null,
-          sessionToken: null,
-          username: null,
-          participantId: null,
-          role: null,
-          authUser: null,
-        }),
+      clearRoomSession: () => set({ ...EMPTY_ROOM_SESSION }),
+      clearSession: () => set({ ...EMPTY_ROOM_SESSION, authUser: null }),
       setAuthUser: (user) => set({ authUser: user }),
     }),
     {

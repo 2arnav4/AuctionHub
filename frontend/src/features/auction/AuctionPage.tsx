@@ -14,7 +14,7 @@ import { PageContainer } from "../../components/ui/PageContainer";
 import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSocket } from "../../hooks/useSocket";
-import { getSocket } from "../../services/socket";
+import { disconnectSocket, getSocket } from "../../services/socket";
 import type { AuctionItem, Bid } from "../../services/api";
 
 interface ToastMsg {
@@ -24,14 +24,17 @@ interface ToastMsg {
 }
 
 export function AuctionPage() {
-  const { code } = useParams<{ code: string }>();
+  // Room codes are stored uppercase, so a lowercase URL must not read as a
+  // different room and lock out a session that is actually valid.
+  const { code: rawCode } = useParams<{ code: string }>();
+  const code = rawCode?.toUpperCase();
   const navigate = useNavigate();
 
   const {
     roomCode: sessionRoomCode,
     username: sessionUsername,
     role: sessionRole,
-    clearSession,
+    clearRoomSession,
   } = useSessionStore();
 
   // Connect to Socket.IO to track live bidding item, presence, and bids history
@@ -122,7 +125,10 @@ export function AuctionPage() {
       socket.off("bid:rejected", handleBidRejected);
       socket.off("error", handleServerError);
     };
-  }, [addToast]);
+    // socketStatus is a dependency because getSocket() returns null until the
+    // connection has been created; without it these listeners would never attach
+    // on a first render that beat the socket into existence.
+  }, [addToast, socketStatus]);
 
   // Security check: Redirect if the user has no session or is in the wrong room
   const hasNoAccess = !sessionUsername || !sessionRole || sessionRoomCode !== code;
@@ -135,7 +141,11 @@ export function AuctionPage() {
   }, [room?.status, code, navigate]);
 
   const handleLeaveRoom = () => {
-    clearSession();
+    // Leaving a room ends the room membership only. Clearing the whole session
+    // would also sign the user out while their auth cookie stayed set, so the
+    // next reload would silently sign them back in.
+    disconnectSocket();
+    clearRoomSession();
     navigate("/");
   };
 
@@ -179,6 +189,30 @@ export function AuctionPage() {
     }
   };
 
+  // Checked before the connection states: without a session token the socket can
+  // never connect, so reporting a connection failure would send the user to a
+  // dead end instead of to the join screen that actually fixes it.
+  if (hasNoAccess) {
+    return (
+      <PageContainer className="px-4 py-12 sm:px-6 sm:py-16">
+        <div className="border border-border bg-surface-raised/40 p-8 rounded-xl text-center max-w-md mx-auto space-y-6 shadow-xl">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+            <Users className="h-6 w-6" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-text-primary">Access Denied</h2>
+            <p className="text-sm text-text-secondary leading-relaxed">
+              You are trying to access room <span className="font-mono text-accent font-semibold">{code}</span> but do not have an active session. Please register to join.
+            </p>
+          </div>
+          <Button variant="primary" onClick={() => navigate(`/join?code=${code}`)} className="w-full">
+            Join Room
+          </Button>
+        </div>
+      </PageContainer>
+    );
+  }
+
   const isLoading = !room && socketStatus === "connecting";
 
   if (isLoading) {
@@ -212,27 +246,6 @@ export function AuctionPage() {
           </div>
           <Button variant="secondary" onClick={() => navigate("/")} className="w-full">
             Back to Home
-          </Button>
-        </div>
-      </PageContainer>
-    );
-  }
-
-  if (hasNoAccess) {
-    return (
-      <PageContainer className="px-4 py-12 sm:px-6 sm:py-16">
-        <div className="border border-border bg-surface-raised/40 p-8 rounded-xl text-center max-w-md mx-auto space-y-6 shadow-xl">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <Users className="h-6 w-6" />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-text-primary">Access Denied</h2>
-            <p className="text-sm text-text-secondary leading-relaxed">
-              You are trying to access room <span className="font-mono text-accent font-semibold">{code}</span> but do not have an active session. Please register to join.
-            </p>
-          </div>
-          <Button variant="primary" onClick={() => navigate(`/join?code=${code}`)} className="w-full">
-            Join Room
           </Button>
         </div>
       </PageContainer>
