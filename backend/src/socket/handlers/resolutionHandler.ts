@@ -8,7 +8,7 @@ type Resolution = "sold" | "unsold";
 
 const auctionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function clearAuctionTimer(roomId: string): void {
+export function clearAuctionTimer(roomId: string): void {
   const timer = auctionTimers.get(roomId);
   if (timer) clearTimeout(timer);
   auctionTimers.delete(roomId);
@@ -34,6 +34,10 @@ export async function restoreAuctionTimers(io: Server): Promise<void> {
   });
 
   for (const room of liveRooms) {
+    // A paused room has no deadline to run down. It stays frozen until the host
+    // resumes, which is what re-arms its timer.
+    if (room.isPaused) continue;
+
     const endsAt = room.endsAt ?? getAuctionEndsAt(Date.now(), env.auctionItemDurationSeconds);
     if (!room.endsAt) {
       room.endsAt = endsAt;
@@ -63,7 +67,7 @@ async function progressAuction(io: Server, roomId: string): Promise<void> {
   if (!nextItem) {
     const completedRoom = await Room.findOneAndUpdate(
       { _id: room._id, status: "live" },
-      { $set: { status: "completed", currentItemId: null, endsAt: null } },
+      { $set: { status: "completed", currentItemId: null, endsAt: null, isPaused: false, pausedRemainingMs: null } },
       { new: true },
     );
 
@@ -72,9 +76,11 @@ async function progressAuction(io: Server, roomId: string): Promise<void> {
     return;
   }
 
+  // Clearing the pause here matters: an item can be sold while frozen, and the
+  // next item must not inherit a paused room it knows nothing about.
   const updatedRoom = await Room.findOneAndUpdate(
     { _id: room._id, status: "live" },
-    { $set: { currentItemId: nextItem._id, endsAt } },
+    { $set: { currentItemId: nextItem._id, endsAt, isPaused: false, pausedRemainingMs: null } },
     { new: true },
   );
 

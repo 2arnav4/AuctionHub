@@ -40,6 +40,7 @@ Roles are per-room, not global: whoever creates a room is that room's host, and 
 - **Anti-snipe countdown** — an accepted bid restarts the item's countdown, so a last-second bid cannot win uncontested.
 - **Server-owned timers** — deadlines are stored as absolute timestamps and rebuilt on boot, so a restart mid-auction resumes rather than resets.
 - **Presence** — live online/offline indicators, with stale flags cleared on startup.
+- **Pause and resume** — the host can freeze the countdown mid-item; bidding closes at the database while paused and the clock restarts from the exact remainder.
 - **Resolution** — the host can sell or mark unsold at any time; otherwise the timer resolves the item automatically.
 - **Results** — a final summary of revenue, items sold, and winners.
 - **Degraded mode** — if MongoDB is unreachable the API returns an explicit 503 and the client shows a retryable error instead of hanging.
@@ -181,8 +182,9 @@ All REST routes are mounted under `/api` and return JSON. Errors use `{ "error":
 2. In a second browser profile or incognito window, sign in as `demo` again and join with the room code. Both windows show the participant list updating live.
 3. Click **Start Live Auction**. Both screens move to the auction board with a synchronized countdown.
 4. Bid from the bidder window. The host window updates instantly; bids below the current highest are rejected with the required minimum. Each accepted bid restarts the countdown.
-5. Let the timer expire or resolve the item manually. The next item activates automatically.
-6. When the catalog is exhausted every client is redirected to the results page.
+5. Click **Pause** on the host window. Both clocks freeze at the same second and the bidder's input is replaced by a paused notice; a bid attempted now is rejected with "Bidding is paused by the host." Click **Resume** and the countdown continues from exactly where it stopped.
+6. Let the timer expire or resolve the item manually. The next item activates automatically.
+7. When the catalog is exhausted every client is redirected to the results page.
 
 To see the concurrency handling directly, open two bidder windows and submit the same amount at the same moment: exactly one is accepted and the other is told the new minimum.
 
@@ -193,7 +195,6 @@ To see the concurrency handling directly, open two bidder windows and submit the
 - **Room reads are deliberately public.** Anyone holding a room code can call `GET /api/rooms/:code` and `/results`. The code is the invitation, and requiring an account to view a shared link would defeat that. Neither route returns a session token, so a code grants visibility and never control. Every write is authorized.
 - **No rate limiting** on authentication or bid submission. A determined client can spam `bid:place`; each attempt is validated and rejected correctly, but nothing throttles the attempts.
 - **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so two determined bidders can keep an item open indefinitely. A production auction would cap total duration or reset to a shorter window.
-- **No host pause/resume.** The host can sell or mark unsold at any time, but cannot freeze a running countdown.
 - **Tests cover the concurrency primitives, not the transport.** The conditional updates that make bidding and resolution safe are tested against a real MongoDB, but the socket handlers wrapping them are verified manually across browser windows.
 - **Demo accounts share one password.** `demo` / `password123` is a shared reviewer login that mints a distinct alias per sign-in. Convenient for a walkthrough, obviously not an authentication model.
 
@@ -202,7 +203,7 @@ To see the concurrency handling directly, open two bidder windows and submit the
 - Redis adapter and a distributed scheduler for multi-instance deployment.
 - Integration tests for concurrent bids and resolution races.
 - Team budgets and per-bidder spend caps.
-- Host pause/resume of the countdown.
+- Bounded anti-snipe: cap total extensions, or reset to a shorter window than the opening one.
 - Spectator (read-only) role.
 - Chat and reactions in the auction room.
 

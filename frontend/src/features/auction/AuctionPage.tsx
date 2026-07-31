@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Clock,
   Crown,
+  Pause,
+  Play,
   Users,
   AlertCircle,
   Tag,
@@ -74,10 +76,16 @@ export function AuctionPage() {
   // once it is positive.
   const highestBid = activeItem && activeItem.currentBid > 0 ? activeItem.currentBid : null;
 
+  // While paused there is no deadline to count down to, so the frozen remainder
+  // is rendered instead of a live difference.
+  const isPaused = Boolean(room?.isPaused);
   const endsAtMs = room?.endsAt ? Date.parse(room.endsAt) : Number.NaN;
-  const secondsRemaining = Number.isFinite(endsAtMs)
-    ? Math.max(0, Math.ceil((endsAtMs - (clockNow + serverClockOffset)) / 1000))
-    : 0;
+  const secondsRemaining = isPaused
+    ? Math.max(0, Math.ceil((room?.pausedRemainingMs ?? 0) / 1000))
+    : Number.isFinite(endsAtMs)
+      ? Math.max(0, Math.ceil((endsAtMs - (clockNow + serverClockOffset)) / 1000))
+      : 0;
+  const biddingOpen = Boolean(activeItem) && !isPaused && secondsRemaining > 0;
 
   useEffect(() => {
     if (!Number.isFinite(endsAtMs)) return;
@@ -196,6 +204,14 @@ export function AuctionPage() {
     }
   };
 
+  // Freeze or restore the countdown (Admin only)
+  const handleTogglePause = () => {
+    const socket = getSocket();
+    if (socket) {
+      socket.emit(isPaused ? "auction:resume" : "auction:pause");
+    }
+  };
+
   // Checked before the connection states: without a session token the socket can
   // never connect, so reporting a connection failure would send the user to a
   // dead end instead of to the join screen that actually fixes it.
@@ -273,10 +289,16 @@ export function AuctionPage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500 mr-2">
                 LIVE AUCTION
               </span>
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${secondsRemaining <= 10 ? "border-red-500/30 bg-red-500/10 text-red-400" : "border-accent/30 bg-accent/10 text-accent"}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isPaused ? "border-amber-500/40 bg-amber-500/10 text-amber-400" : secondsRemaining <= 10 ? "border-red-500/30 bg-red-500/10 text-red-400" : "border-accent/30 bg-accent/10 text-accent"}`}>
                 <Clock className="h-3 w-3" />
                 {secondsRemaining}s
               </span>
+              {isPaused && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                  <Pause className="h-3 w-3" />
+                  Paused
+                </span>
+              )}
               {socketStatus === "connected" && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 border border-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -313,10 +335,29 @@ export function AuctionPage() {
                 Host Resolution Console
               </h3>
               <p className="text-xs text-text-secondary">
-                Resolve the current item's bid. The next pending item in queue will activate automatically.
+                {isPaused
+                  ? "Bidding is frozen. Resume to restore the countdown from where it stopped."
+                  : "Pause to freeze the clock, or resolve the item. The next pending item activates automatically."}
               </p>
             </div>
             <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                onClick={handleTogglePause}
+                variant="secondary"
+                className={`flex-1 sm:flex-initial text-xs border ${isPaused ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20" : "border-border/50"}`}
+              >
+                {isPaused ? (
+                  <>
+                    <Play className="h-3.5 w-3.5" />
+                    Resume
+                  </>
+                ) : (
+                  <>
+                    <Pause className="h-3.5 w-3.5" />
+                    Pause
+                  </>
+                )}
+              </Button>
               <Button
                 onClick={handleSellItem}
                 variant="primary"
@@ -350,9 +391,14 @@ export function AuctionPage() {
                   <Tag className="h-4 w-4 text-accent" />
                   Active Auction Item
                 </span>
-                {activeItem && secondsRemaining > 0 && (
+                {biddingOpen && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-500/15 border border-green-500/30 px-2.5 py-0.5 rounded-full">
                     Bidding Open
+                  </span>
+                )}
+                {activeItem && isPaused && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                    Bidding Paused
                   </span>
                 )}
               </div>
@@ -413,7 +459,19 @@ export function AuctionPage() {
             </div>
 
             {/* Bidding Placement input Box (Visible to Bidders only) */}
-            {!isAdmin && activeItem && secondsRemaining > 0 && (
+            {!isAdmin && activeItem && isPaused && (
+              <div className="border border-amber-500/20 bg-amber-500/5 p-6 rounded-xl flex items-center gap-3 shadow-lg">
+                <Pause className="h-5 w-5 text-amber-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-400">Bidding paused by the host</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    The clock is frozen at {secondsRemaining}s. Bidding reopens the moment the host resumes.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isAdmin && biddingOpen && (
               <div className="border border-border bg-surface-raised/40 p-6 rounded-xl space-y-4 shadow-lg">
                 <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
                   <DollarSign className="h-4 w-4 text-accent" />

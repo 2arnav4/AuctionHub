@@ -64,6 +64,14 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
+      if (activeItem.isPaused) {
+        socket.emit("bid:rejected", {
+          reason: "Bidding is paused by the host.",
+          minimumBid: Math.max(activeItem.startingBid, activeItem.currentBid + 1),
+        });
+        return;
+      }
+
       const amount = data.amount;
       if (!isValidPositiveAmount(amount)) {
         socket.emit("bid:rejected", {
@@ -100,6 +108,10 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         {
           _id: activeItem._id,
           status: "active",
+          // Enforced here and not only in the check above: a pause landing
+          // between that read and this update would otherwise let one bid
+          // through after the countdown had visibly stopped for everyone.
+          isPaused: false,
           endsAt: { $gt: new Date() },
           // Both floors are enforced here, not just in the check above, because
           // the check above is a separate read and cannot be trusted under
@@ -124,9 +136,11 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         const latestMinimumBid = latestItem
           ? Math.max(latestItem.startingBid, latestItem.currentBid + 1)
           : 1;
-        const reason = latestItem?.endsAt && latestItem.endsAt <= new Date()
-          ? "Bidding time has expired for this item."
-          : `Bid amount is too low. Minimum required: ₹${latestMinimumBid}`;
+        const reason = latestItem?.isPaused
+          ? "Bidding is paused by the host."
+          : latestItem?.endsAt && latestItem.endsAt <= new Date()
+            ? "Bidding time has expired for this item."
+            : `Bid amount is too low. Minimum required: ₹${latestMinimumBid}`;
         socket.emit("bid:rejected", {
           reason,
           minimumBid: latestMinimumBid,

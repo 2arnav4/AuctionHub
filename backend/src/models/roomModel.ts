@@ -7,6 +7,10 @@ export interface IRoom extends Document {
   adminParticipantId?: mongoose.Types.ObjectId | null;
   currentItemId?: mongoose.Types.ObjectId | null;
   endsAt?: Date | null;
+  /** True while the host has frozen the countdown for the active item. */
+  isPaused: boolean;
+  /** Milliseconds left on the active item at the moment it was paused. */
+  pausedRemainingMs?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +49,17 @@ const RoomSchema = new Schema<IRoom>(
     },
     endsAt: {
       type: Date,
+      default: null,
+    },
+    isPaused: {
+      type: Boolean,
+      default: false,
+      required: true,
+    },
+    // Stored rather than recomputed: pausing clears endsAt, so the remaining
+    // time has nowhere else to live and must survive a restart.
+    pausedRemainingMs: {
+      type: Number,
       default: null,
     },
   },

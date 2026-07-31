@@ -63,12 +63,22 @@ function claimBid(itemId: mongoose.Types.ObjectId, amount: number, newEndsAt: Da
     {
       _id: itemId,
       status: "active",
+      isPaused: false,
       endsAt: { $gt: new Date() },
       startingBid: { $lte: amount },
       currentBid: { $lt: amount },
     },
     { $set: { currentBid: amount, endsAt: newEndsAt } },
     { new: true },
+  );
+}
+
+/** The host's pause claim, in full. */
+function claimPause(itemId: mongoose.Types.ObjectId) {
+  return AuctionItem.findOneAndUpdate(
+    { _id: itemId, status: "active", isPaused: false, endsAt: { $gt: new Date() } },
+    { $set: { isPaused: true, endsAt: null } },
+    { new: false },
   );
 }
 
@@ -156,6 +166,61 @@ test("a stale expiry cannot end an item whose deadline was extended", async (t) 
 
   const stored = await AuctionItem.findById(item._id);
   assert.equal(stored?.status, "active", "the item must still be open for bidding");
+});
+
+test("only one of two simultaneous pauses wins, so the remainder is read once", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 60_000);
+
+  const results = await Promise.all([
+    claimPause(item._id as mongoose.Types.ObjectId),
+    claimPause(item._id as mongoose.Types.ObjectId),
+  ]);
+
+  const winners = results.filter((result) => result !== null);
+  assert.equal(winners.length, 1, "a double click must not compute the remaining time twice");
+  assert.notEqual(winners[0]?.endsAt, null, "the winner must see the pre-pause deadline");
+});
+
+test("a paused item accepts no bids", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 60_000);
+  await claimPause(item._id as mongoose.Types.ObjectId);
+
+  const result = await claimBid(item._id as mongoose.Types.ObjectId, 5_000, new Date(Date.now() + 60_000));
+  assert.equal(result, null, "pausing must close bidding at the database, not just in the UI");
+});
+
+test("resuming restores bidding with the remaining time", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 30_000);
+  const before = await claimPause(item._id as mongoose.Types.ObjectId);
+  const remainingMs = (before!.endsAt as Date).getTime() - Date.now();
+
+  const resumed = await AuctionItem.findOneAndUpdate(
+    { _id: item._id, status: "active", isPaused: true },
+    { $set: { isPaused: false, endsAt: new Date(Date.now() + remainingMs) } },
+    { new: true },
+  );
+  assert.notEqual(resumed, null, "a paused item must be resumable");
+
+  const bid = await claimBid(item._id as mongoose.Types.ObjectId, 500, new Date(Date.now() + 30_000));
+  assert.notEqual(bid, null, "bidding must reopen after resume");
+});
+
+test("a paused item cannot be expired by a timer", async (t) => {
+  if (!dbAvailable) return t.skip("no reachable MONGODB_URI");
+  const item = await createActiveItem(100, 60_000);
+  await claimPause(item._id as mongoose.Types.ObjectId);
+
+  // endsAt is null while paused, and null never satisfies $lte against a date,
+  // so an expiry cannot claim a frozen item however long the pause lasts.
+  const expiry = await AuctionItem.findOneAndUpdate(
+    { _id: item._id, status: "active", endsAt: { $lte: new Date() } },
+    { $set: { status: "unsold" } },
+    { new: true },
+  );
+  assert.equal(expiry, null, "a pause must survive indefinitely without expiring");
 });
 
 test("an expiry does claim an item whose deadline has genuinely passed", async (t) => {

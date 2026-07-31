@@ -57,6 +57,10 @@ Socket connections are room-scoped. The client sends a per-room `sessionToken` d
 | `auction:start` | Client → Server | *None* | Host only. Moves the room from `lobby` to `live`. |
 | `auction:started` | Server → Client | `{ room }` | Tells every client to move from the lobby to the auction board. |
 | `item:activated` | Server → Client | `{ item, startedAt, endsAt }` | The new active item plus the server's clock at activation and the absolute deadline. |
+| `auction:pause` | Client → Server | *None* | Host only. Freezes the countdown on the active item. |
+| `auction:paused` | Server → Client | `{ itemId, remainingMs }` | Broadcast when the clock stops. `remainingMs` is what the client renders in place of a live countdown. |
+| `auction:resume` | Client → Server | *None* | Host only. Restarts the countdown from where it stopped. |
+| `auction:resumed` | Server → Client | `{ item, endsAt, serverTime }` | Broadcast with the new absolute deadline and the server clock for offset correction. |
 | `bid:place` | Client → Server | `{ amount: number }` | Bidders only. Hosts are rejected. |
 | `bid:accepted` | Server → Client | `{ bid, item }` | Broadcast to the room. `item` carries the new highest bid and the extended `endsAt`. |
 | `bid:rejected` | Server → Client | `{ reason: string, minimumBid: number }` | Sent only to the submitting socket. |
@@ -144,10 +148,37 @@ for (const room of liveRooms) {
 
 A deadline already in the past yields a zero delay, so the item resolves immediately on startup rather than hanging.
 
-### 4. Presence After a Restart
+### 4. Pausing Without Losing the Deadline
+
+The countdown is an absolute timestamp, not a ticking counter, so pausing cannot simply "stop the clock" — there is no clock to stop. Instead the pause converts the deadline back into a duration:
+
+```typescript
+// `new: false` returns the document as it was at the instant of the swap, which
+// is the only trustworthy reading of endsAt: a separate read could observe a
+// value a concurrent bid had already extended.
+const beforePause = await AuctionItem.findOneAndUpdate(
+  { _id: itemId, status: "active", isPaused: false, endsAt: { $gt: new Date() } },
+  { $set: { isPaused: true, endsAt: null } },
+  { new: false },
+);
+
+const remainingMs = beforePause.endsAt.getTime() - Date.now();
+```
+
+The remainder is stored on the room, the in-memory timer is cleared, and resuming sets `endsAt` to `now + remainingMs` and re-arms it.
+
+Three properties fall out of this:
+
+- **Pausing closes bidding at the database.** `isPaused: false` is part of the bid claim, not merely a check before it, so a pause landing between the read and the update cannot let one last bid slip through after the clock has visibly stopped for everyone.
+- **A paused item cannot expire.** `endsAt` is `null` while frozen, and `null` never satisfies `$lte` against a date, so the expiry claim finds nothing however long the pause lasts.
+- **A double click is harmless.** The pause is itself a conditional claim on `isPaused: false`, so only one of two simultaneous requests can win and the remaining time is computed exactly once.
+
+Restart recovery skips paused rooms entirely: with no deadline there is nothing to count down, and the host's resume is what re-arms the timer.
+
+### 5. Presence After a Restart
 Presence is tracked two ways: an in-memory map of participant id to live socket ids, which allows multiple tabs without duplicate join broadcasts, and an `isConnected` flag persisted on the participant so `room:state` can render the roster. A restart loses the map but not the flag, which would leave every previous bidder shown as permanently online. Startup therefore clears all `isConnected` flags before restoring timers; live clients re-register on their next `room:connect`.
 
-### 5. Database Availability
+### 6. Database Availability
 MongoDB is treated as a runtime dependency, not a startup precondition. The HTTP port binds first and the connection retries with exponential backoff, so an unreachable database degrades the API instead of failing the deploy. While disconnected, both entry points refuse work at the door — REST returns `503` and the socket handshake rejects with the same explanation — rather than letting queries sit in Mongoose's buffer until it times out.
 
 ---

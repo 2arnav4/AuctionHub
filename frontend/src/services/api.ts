@@ -26,6 +26,8 @@ export interface Room {
   status: "lobby" | "live" | "completed";
   adminParticipantId?: string | null;
   endsAt?: string | null;
+  isPaused?: boolean;
+  pausedRemainingMs?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -193,6 +195,7 @@ export interface AuctionItem {
   highestBidderId?: string | null;
   highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
+  isPaused?: boolean;
   endsAt?: string | null;
   createdAt: string;
   updatedAt: string;

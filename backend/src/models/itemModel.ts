@@ -9,6 +9,8 @@ export interface IAuctionItem extends Document {
   highestBidderId?: mongoose.Types.ObjectId | null;
   highestBidderUsername?: string | null;
   status: "pending" | "active" | "sold" | "unsold";
+  /** Mirrors the room's pause state so it can be enforced inside the bid claim. */
+  isPaused: boolean;
   endsAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +56,11 @@ const AuctionItemSchema = new Schema<IAuctionItem>(
       type: String,
       enum: ["pending", "active", "sold", "unsold"],
       default: "pending",
+      required: true,
+    },
+    isPaused: {
+      type: Boolean,
+      default: false,
       required: true,
     },
     endsAt: {

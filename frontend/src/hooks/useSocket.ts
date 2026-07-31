@@ -96,6 +96,22 @@ export function useSocket(roomCode: string) {
       }
     };
     const handleBidRejected = (data: { reason: string; minimumBid: number }) => setBidError(data);
+    const handleAuctionPaused = (data: { itemId: string; remainingMs: number }) => {
+      // Clearing endsAt is what freezes the countdown: the client renders the
+      // stored remainder instead of counting down to an absolute deadline.
+      setActiveItem((current) => current ? { ...current, isPaused: true, endsAt: null } : current);
+      setRoom((current) => current
+        ? { ...current, isPaused: true, pausedRemainingMs: data.remainingMs, endsAt: null }
+        : current);
+    };
+    const handleAuctionResumed = (data: { item: AuctionItem; endsAt: string; serverTime?: string }) => {
+      if (data.serverTime) setServerClockOffset(Date.parse(data.serverTime) - Date.now());
+      setActiveItem(data.item);
+      setRoom((current) => current
+        ? { ...current, isPaused: false, pausedRemainingMs: null, endsAt: data.endsAt }
+        : current);
+      setBidError(null);
+    };
     const handleItemEnded = () => {
       setActiveItem(null);
       setBids([]);
@@ -118,6 +134,8 @@ export function useSocket(roomCode: string) {
     socket.on("item:activated", handleItemActivated);
     socket.on("bid:accepted", handleBidAccepted);
     socket.on("bid:rejected", handleBidRejected);
+    socket.on("auction:paused", handleAuctionPaused);
+    socket.on("auction:resumed", handleAuctionResumed);
     socket.on("item:ended", handleItemEnded);
     socket.on("auction:completed", handleAuctionCompleted);
 
@@ -135,6 +153,8 @@ export function useSocket(roomCode: string) {
       socket.off("item:activated", handleItemActivated);
       socket.off("bid:accepted", handleBidAccepted);
       socket.off("bid:rejected", handleBidRejected);
+      socket.off("auction:paused", handleAuctionPaused);
+      socket.off("auction:resumed", handleAuctionResumed);
       socket.off("item:ended", handleItemEnded);
       socket.off("auction:completed", handleAuctionCompleted);
 
