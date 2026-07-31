@@ -5,9 +5,9 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "node server.js",
-    "dev": "npm run build && node server.js",
+    "dev": "tsx watch src/index.ts",
     "lint": "tsc --noEmit",
     "test": "npm run build && node --test dist/utils/auctionTest.js"
   },

@@ -2,11 +2,6 @@ const rawApiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 const sanitizedBaseUrl = rawApiUrl.replace(/\/$/, "");
 const API_URL = sanitizedBaseUrl.endsWith("/api") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/api`;
 
-// Health route is served from the root of the server
-const SERVER_ROOT_URL = API_URL.endsWith("/api")
-  ? API_URL.slice(0, -4)
-  : API_URL;
-
 // A free-tier host spins the server down when idle, and the next request pays
 // the cold start. Allow for that before declaring the backend unreachable.
 const COLD_START_TIMEOUT_MS = 60_000;
@@ -60,18 +55,6 @@ export interface JoinResponse {
 export interface AuthResponse {
   username: string;
   role: "admin" | "participant";
-}
-
-export async function healthCheck(): Promise<{ status: string }> {
-  const response = await fetch(`${SERVER_ROOT_URL}/health`, {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error("Health check failed");
-  }
-
-  return response.json();
 }
 
 /**
@@ -200,19 +183,6 @@ export async function joinRoom(
   return response.json();
 }
 
-export async function getRoom(code: string): Promise<Room> {
-  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}`, {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error ?? "Failed to fetch room details");
-  }
-
-  return response.json();
-}
-
 export interface AuctionItem {
   _id: string;
   roomId: string;
@@ -248,19 +218,6 @@ export async function addAuctionItem(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error ?? "Failed to add auction item.");
-  }
-
-  return response.json();
-}
-
-export async function getAuctionItems(code: string): Promise<AuctionItem[]> {
-  const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`, {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error ?? "Failed to fetch auction items.");
   }
 
   return response.json();
