@@ -48,9 +48,11 @@ async function seed(): Promise<void> {
   });
 
   const code = await generateUniqueRoomCode();
-  // Comfortably above the catalog total, so a walkthrough can show the purse
-  // shrinking without a bidder running out mid-demo.
-  const startingBudget = 150_000;
+  // Deliberately below the ₹85,000 catalog total. A purse that covers
+  // everything removes the only interesting decision in the auction; at this
+  // level a bidder can take the Rolex and one other lot, or spread across
+  // three, but not have all four.
+  const startingBudget = 60_000;
   const room = new Room({
     code,
     name: "Rare Collectibles — Demo Auction",
