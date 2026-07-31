@@ -83,18 +83,16 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 4. Create and save the new bid before atomically claiming the new highest amount.
-      const newBid = new Bid({
-        roomId: room._id,
-        itemId: activeItem._id,
-        participantId: participant._id,
-        username: participant.username,
-        amount,
-      });
-      await newBid.save();
-
-      // A conditional update prevents concurrent requests from accepting a stale/lower bid.
-      // Reset the countdown timer back to the original timing (60s from now)
+      // 4. Claim the highest bid atomically before writing anything.
+      //
+      // Only one concurrent request can match `currentBid: { $lt: amount }`, so
+      // the losers never write at all. Persisting the bid first and deleting it
+      // on failure — the previous approach — left a rejected bid briefly visible
+      // to any concurrent room:connect reading the log, and orphaned it forever
+      // if the process died between the write and the compensating delete.
+      //
+      // The same update extends the deadline: an accepted bid restarts the
+      // countdown so a last-second snipe cannot end the item uncontested.
       const newEndsAt = new Date(Date.now() + env.auctionItemDurationSeconds * 1000);
 
       const updatedItem = await AuctionItem.findOneAndUpdate(
@@ -116,7 +114,6 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
       );
 
       if (!updatedItem) {
-        await Bid.deleteOne({ _id: newBid._id });
         const latestItem = await AuctionItem.findById(activeItem._id);
         const latestMinimumBid = latestItem ? latestItem.currentBid + 1 : 1;
         const reason = latestItem?.endsAt && latestItem.endsAt <= new Date()
@@ -128,6 +125,17 @@ export function registerBiddingHandlers(io: Server, socket: Socket): void {
         });
         return;
       }
+
+      // 5. The claim succeeded, so this bid is now the authoritative highest and
+      // can safely be appended to the immutable log.
+      const newBid = new Bid({
+        roomId: room._id,
+        itemId: activeItem._id,
+        participantId: participant._id,
+        username: participant.username,
+        amount,
+      });
+      await newBid.save();
 
       // Reset Room endsAt and reschedule the authoritative server-owned timer
       await Room.updateOne(
