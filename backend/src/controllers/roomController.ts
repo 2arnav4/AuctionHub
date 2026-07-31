@@ -13,7 +13,8 @@ export async function createRoomHandler(
 ): Promise<void> {
   try {
     const { roomName } = req.body;
-    const username = req.user?.username || req.body.username;
+    // requireAuth guarantees this; the body is deliberately not consulted.
+    const username = req.user?.username ?? "";
     const result = await roomService.createRoom(username, roomName);
     res.status(201).json(result);
   } catch (error) {
@@ -32,7 +33,8 @@ export async function joinRoomHandler(
 ): Promise<void> {
   try {
     const code = req.params.code as string;
-    const username = req.user?.username || req.body.username;
+    // requireAuth guarantees this; the body is deliberately not consulted.
+    const username = req.user?.username ?? "";
     const result = await roomService.joinRoom(code, username);
     res.status(200).json(result);
   } catch (error) {

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
+import { AppError } from "./errorHandler.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -11,34 +12,34 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Optional authentication middleware.
- * If a JWT token cookie is present, verifies it and populates req.user.
- * Does not block the request if authentication is missing.
+ * Required authentication. Rejects the request unless a valid JWT cookie is
+ * present, and makes the verified identity the only source of the username.
+ *
+ * Room creation and joining establish who a participant is for the entire
+ * lifetime of an auction, so they must not accept a username supplied in the
+ * request body: doing so lets an unauthenticated caller enter a room under any
+ * name they choose.
  */
-export function optionalAuth(
+export function requireAuth(
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction,
 ): void {
+  const token = req.cookies?.token;
+
+  if (!token) {
+    next(new AppError("You must be signed in to do that.", 401));
+    return;
+  }
+
   try {
-    const token = req.cookies.token;
-
-    if (!token) {
-      return next();
-    }
-
-    try {
-      const decoded = jwt.verify(token, env.jwtSecret) as {
-        username: string;
-        role: "admin" | "participant";
-      };
-      req.user = decoded;
-    } catch (err) {
-      // Stale or invalid cookie -> ignore and continue
-    }
+    req.user = jwt.verify(token, env.jwtSecret) as {
+      username: string;
+      role: "admin" | "participant";
+    };
     next();
-  } catch (error) {
-    next(error);
+  } catch {
+    next(new AppError("Your session has expired. Please sign in again.", 401));
   }
 }
 
