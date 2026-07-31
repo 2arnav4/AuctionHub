@@ -1,3 +1,5 @@
+import { useSessionStore } from "../stores/useSessionStore";
+
 const rawApiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 const sanitizedBaseUrl = rawApiUrl.replace(/\/$/, "");
 const API_URL = sanitizedBaseUrl.endsWith("/api") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/api`;
@@ -57,6 +59,22 @@ export interface JoinResponse {
 export interface AuthResponse {
   username: string;
   role: "admin" | "participant";
+  /** Present on login/register only; mirrored into the session store. */
+  token?: string;
+}
+
+/**
+ * Headers for an authenticated request.
+ *
+ * `credentials: "include"` alone is not enough: the API lives on a different
+ * registrable domain than the app, so its auth cookie is third-party, and
+ * Chrome incognito plus Safari and Firefox tracking protection refuse to send
+ * it. The bearer header carries the same JWT over a channel no cookie policy
+ * can block. The cookie is still sent when the browser allows it.
+ */
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = useSessionStore.getState().authToken;
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
 }
 
 /**
@@ -102,6 +120,7 @@ export async function register(username: string, password?: string): Promise<Aut
 export async function logout(): Promise<{ message: string }> {
   const response = await fetch(`${API_URL}/auth/logout`, {
     method: "POST",
+    headers: authHeaders(),
     credentials: "include",
   });
 
@@ -119,6 +138,7 @@ export async function checkAuth(): Promise<{ user: AuthResponse | null }> {
   try {
     response = await fetch(`${API_URL}/auth/me`, {
       method: "GET",
+      headers: authHeaders(),
       credentials: "include",
       signal: AbortSignal.timeout(COLD_START_TIMEOUT_MS),
     });
@@ -149,9 +169,7 @@ export async function createRoom(
 ): Promise<RoomResponse> {
   const response = await fetch(`${API_URL}/rooms`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username, roomName }),
     credentials: "include",
   });
@@ -170,9 +188,7 @@ export async function joinRoom(
 ): Promise<JoinResponse> {
   const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/join`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username }),
     credentials: "include",
   });
@@ -210,10 +226,10 @@ export async function addAuctionItem(
 ): Promise<AuctionItem> {
   const response = await fetch(`${API_URL}/rooms/${code.toUpperCase()}/items`, {
     method: "POST",
-    headers: {
+    headers: authHeaders({
       "Content-Type": "application/json",
       "x-session-token": sessionToken,
-    },
+    }),
     body: JSON.stringify({ name, description, startingBid }),
     credentials: "include",
   });

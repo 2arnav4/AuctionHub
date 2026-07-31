@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { AppError } from "../middleware/errorHandler.js";
 import { env } from "../config/env.js";
 import { User, type IUser } from "../models/userModel.js";
+import { readAuthToken } from "../middleware/authMiddleware.js";
 
 const isProd = env.nodeEnv === "production";
 
@@ -131,9 +132,14 @@ export async function loginHandler(
     // Set Cookie
     res.cookie("token", token, COOKIE_OPTIONS);
 
+    // The token is returned as well as set as a cookie. The API and the frontend
+    // are on different registrable domains, so that cookie is third-party and is
+    // blocked by default in Chrome incognito and under Safari/Firefox tracking
+    // protection. Clients hold this and send it as a bearer header instead.
     res.status(200).json({
       username: finalUsername,
       role,
+      token,
     });
   } catch (error) {
     next(error);
@@ -212,6 +218,7 @@ export async function registerHandler(
     res.status(201).json({
       username: trimmedUsername,
       role,
+      token,
     });
   } catch (error) {
     next(error);
@@ -251,7 +258,7 @@ export async function meHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const token = req.cookies.token;
+    const token = readAuthToken(req);
 
     if (!token) {
       res.status(200).json({ user: null });

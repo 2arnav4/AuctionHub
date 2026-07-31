@@ -196,6 +196,7 @@ To see the concurrency handling directly, open two bidder windows and submit the
 - **No rate limiting** on authentication or bid submission. A determined client can spam `bid:place`; each attempt is validated and rejected correctly, but nothing throttles the attempts.
 - **Unbounded anti-snipe.** Every accepted bid restores the full countdown, so two determined bidders can keep an item open indefinitely. A production auction would cap total duration or reset to a shorter window.
 - **Tests cover the concurrency primitives, not the transport.** The conditional updates that make bidding and resolution safe are tested against a real MongoDB, but the socket handlers wrapping them are verified manually across browser windows.
+- **The auth JWT is readable by JavaScript.** The API is on a different domain than the app, so its cookie is third-party and blocked by default in Chrome incognito and under Safari/Firefox tracking protection. The token is therefore also held client-side and sent as a bearer header, which trades HTTP-only protection for actually working. Serving both from one origin would remove the trade-off — see [DECISIONS.md](DECISIONS.md).
 - **Demo accounts share one password.** `demo` / `password123` is a shared reviewer login that mints a distinct alias per sign-in. Convenient for a walkthrough, obviously not an authentication model.
 
 ## Future Improvements

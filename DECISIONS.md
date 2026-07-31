@@ -49,6 +49,23 @@ This document outlines key technical decisions, architectural trade-offs, and de
 - **Socket Handshake Security:** Socket.IO handshakes carry the `sessionToken`, which is matched against a participant record before the socket is allowed into a room channel. Session tokens are stripped from every participant list sent to clients.
 - **Authorization lives with the room, not the cookie:** every privileged action — adding an item, starting the auction, resolving an item, placing a bid — is checked against the participant's role, not the JWT.
 
+### Why the JWT travels two ways
+
+The token is set as an HTTP-only cookie **and** returned in the login response for the client to send as `Authorization: Bearer`. That looks redundant; it is not.
+
+The frontend is served from `auction-assignment.vercel.app` and the API from `live-auction-fhb9.onrender.com`. Those are different registrable domains, so from the browser's point of view the auth cookie is **third-party** — and third-party cookies are blocked by default in Chrome incognito, under Safari's Intelligent Tracking Prevention, and under Firefox's Enhanced Tracking Protection.
+
+The failure mode this produced was instructive. Login itself succeeded, because the *response* was fine; only the `Set-Cookie` was dropped. The client stored the returned user and rendered a signed-in navbar, then every subsequent authenticated request arrived with no cookie and was correctly rejected with 401. The UI said "signed in as demo_fcc15e" while the API said "you must be signed in" — a contradiction that came entirely from trusting a response body over the actual session.
+
+Two fixes were available:
+
+1. **Serve both from one origin** — proxy the API under the frontend's domain so the cookie is first-party. Architecturally the right answer, and what I would do with more runway, but it changes the deployment topology.
+2. **Add a bearer header** — carry the same JWT over a channel no cookie policy can block.
+
+I took the second. The cookie is still set and still used when the browser allows it, so nothing is lost where third-party cookies work; the header is the fallback that makes the app usable everywhere.
+
+**The cost, stated plainly:** a token readable by JavaScript is exposed to XSS in a way an HTTP-only cookie is not. That is a real downgrade, accepted because the alternative was an app that silently fails for any visitor with default privacy settings. The server is also now the authority on session validity — if `/auth/me` reports nobody signed in, the client discards its stored token rather than continuing to display an identity the API rejects.
+
 ### Where each layer applies
 `POST /api/rooms` and `POST /api/rooms/:code/join` sit behind `requireAuth`, and take the username from the verified cookie only — never from the request body. Accepting a body-supplied name would let an unauthenticated caller enter a room under any identity, and since these two endpoints establish who a participant is for the entire auction, that is the one place identity must not be negotiable.
 

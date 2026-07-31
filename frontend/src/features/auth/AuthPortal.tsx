@@ -7,6 +7,7 @@ import { getErrorMessage } from "../../utils/error";
 
 export function AuthPortal() {
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
+  const setAuthToken = useSessionStore((state) => state.setAuthToken);
 
   const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
   const [username, setUsername] = useState("");
@@ -69,7 +70,10 @@ export function AuthPortal() {
       } else {
         data = await login(targetUser.trim(), targetPass ? targetPass : undefined);
       }
-      setAuthUser(data);
+      // Stored before the user, so any request triggered by the state change
+      // already has a token to send.
+      setAuthToken(data.token ?? null);
+      setAuthUser({ username: data.username, role: data.role });
     } catch (err: unknown) {
       console.error("Authentication failed:", err);
       setError(getErrorMessage(err, "Authentication failed."));

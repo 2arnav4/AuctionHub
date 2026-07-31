@@ -14,6 +14,7 @@ const SLOW_START_NOTICE_MS = 4_000;
 
 export function AuthInitializer({ children }: Props) {
   const setAuthUser = useSessionStore((state) => state.setAuthUser);
+  const setAuthToken = useSessionStore((state) => state.setAuthToken);
   const [status, setStatus] = useState<InitStatus>("loading");
   const [isSlow, setIsSlow] = useState(false);
 
@@ -28,6 +29,12 @@ export function AuthInitializer({ children }: Props) {
     checkAuth()
       .then((data) => {
         if (cancelled) return;
+        // The server is the authority on whether the session is still valid. If
+        // it says nobody is signed in, a token left in storage is stale and
+        // would otherwise keep the UI claiming an identity the API rejects —
+        // exactly the mismatch that produced "You must be signed in to do that"
+        // on a screen showing a signed-in user.
+        if (!data.user) setAuthToken(null);
         setAuthUser(data.user ?? null);
         setStatus("ready");
       })
@@ -41,6 +48,7 @@ export function AuthInitializer({ children }: Props) {
           return;
         }
 
+        setAuthToken(null);
         setAuthUser(null);
         setStatus("ready");
       });
@@ -48,7 +56,7 @@ export function AuthInitializer({ children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [setAuthUser, attempt]);
+  }, [setAuthUser, setAuthToken, attempt]);
 
   const retry = useCallback(() => {
     setStatus("loading");
