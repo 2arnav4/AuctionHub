@@ -7,6 +7,23 @@ const SERVER_ROOT_URL = API_URL.endsWith("/api")
   ? API_URL.slice(0, -4)
   : API_URL;
 
+// A free-tier host spins the server down when idle, and the next request pays
+// the cold start. Allow for that before declaring the backend unreachable.
+const COLD_START_TIMEOUT_MS = 60_000;
+
+/**
+ * The backend could not be reached at all, or reached but is not healthy.
+ *
+ * Distinct from a normal failed response: "nobody is logged in" is an expected
+ * outcome, whereas this means the app cannot function and should say so.
+ */
+export class ApiUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiUnavailableError";
+  }
+}
+
 export interface Room {
   _id: string;
   code: string;
@@ -112,10 +129,23 @@ export async function logout(): Promise<{ message: string }> {
 }
 
 export async function checkAuth(): Promise<{ user: AuthResponse | null }> {
-  const response = await fetch(`${API_URL}/auth/me`, {
-    method: "GET",
-    credentials: "include",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/auth/me`, {
+      method: "GET",
+      credentials: "include",
+      signal: AbortSignal.timeout(COLD_START_TIMEOUT_MS),
+    });
+  } catch {
+    // Network failure, DNS failure, CORS rejection or timeout.
+    throw new ApiUnavailableError("Could not reach the server.");
+  }
+
+  // 5xx means the backend is up but unhealthy, e.g. its database is unreachable.
+  if (response.status >= 500) {
+    throw new ApiUnavailableError("The server is not ready yet.");
+  }
 
   if (!response.ok) {
     return { user: null };
