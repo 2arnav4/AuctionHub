@@ -20,7 +20,10 @@ export function useSocket(roomCode: string) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [items, setItems] = useState<AuctionItem[]>([]);
   const [activeItem, setActiveItem] = useState<AuctionItem | null>(null);
-  const [activeItemStartedAt, setActiveItemStartedAt] = useState<string | null>(null);
+  // serverTime minus the local clock at the moment a server message arrived.
+  // Deadlines are absolute server timestamps, so counting down against an
+  // uncorrected local clock would drift by however wrong that clock is.
+  const [serverClockOffset, setServerClockOffset] = useState(0);
   const [bids, setBids] = useState<Bid[]>([]);
   const [bidError, setBidError] = useState<{ reason: string; minimumBid: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +49,9 @@ export function useSocket(roomCode: string) {
       activeItem: AuctionItem | null;
       bids: Bid[];
       items: AuctionItem[];
+      serverTime?: string;
     }) => {
+      if (data.serverTime) setServerClockOffset(Date.parse(data.serverTime) - Date.now());
       setRoom(data.room);
       setParticipants(data.participants);
       setActiveItem(data.activeItem);
@@ -75,7 +80,9 @@ export function useSocket(roomCode: string) {
     const handleAuctionStarted = (data: { room: Room }) => setRoom(data.room);
     const handleItemActivated = (data: { item: AuctionItem; startedAt: string; endsAt: string }) => {
       setActiveItem(data.item);
-      setActiveItemStartedAt(data.startedAt);
+      // startedAt is the server's clock at activation, so it re-measures the
+      // offset on every item without needing a separate round trip.
+      setServerClockOffset(Date.parse(data.startedAt) - Date.now());
       setBids([]);
       setBidError(null);
       setRoom((current) => current ? { ...current, status: "live", endsAt: data.endsAt } : current);
@@ -146,7 +153,7 @@ export function useSocket(roomCode: string) {
     participants,
     items,
     activeItem,
-    activeItemStartedAt,
+    serverClockOffset,
     bids,
     bidError,
     setBidError,

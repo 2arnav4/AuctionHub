@@ -62,13 +62,16 @@ export function registerRoomHandlers(io: Server, socket: Socket): void {
 
       const items = await AuctionItem.find({ roomId: room._id }).sort({ createdAt: 1 });
 
-      // Emit room:state to the current client
+      // Emit room:state to the current client. serverTime lets the client measure
+      // its own clock offset, so a countdown derived from an absolute deadline
+      // stays correct even on a machine whose clock is wrong.
       socket.emit("room:state", {
         room,
         participants,
         activeItem,
         bids,
         items,
+        serverTime: new Date().toISOString(),
       });
 
       // Broadcast participant:joined to other clients in the room
