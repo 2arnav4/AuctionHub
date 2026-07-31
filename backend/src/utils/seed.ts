@@ -42,7 +42,10 @@ const CATALOG = [
 ];
 
 async function seed(): Promise<void> {
-  await mongoose.connect(env.mongodbUri, { serverSelectionTimeoutMS: 15_000 });
+  await mongoose.connect(env.mongodbUri, {
+    serverSelectionTimeoutMS: 15_000,
+    dbName: env.mongodbDbName,
+  });
 
   const code = await generateUniqueRoomCode();
   const room = new Room({ code, name: "Rare Collectibles — Demo Auction", status: "lobby" });

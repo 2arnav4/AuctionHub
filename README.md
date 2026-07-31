@@ -129,7 +129,8 @@ The concurrency tests run against whatever `MONGODB_URI` points at and skip them
 | `PORT` | no | `3001` | HTTP port. Must be a positive integer. |
 | `NODE_ENV` | no | `development` | `production` enables `Secure; SameSite=None` auth cookies, required for a cross-origin deployment. |
 | `CLIENT_URL` | no | `http://localhost:5173` | Allowed CORS origin. In development `http://localhost:5173` is always permitted as well. |
-| `MONGODB_URI` | no | `mongodb://localhost:27017/auction-room` | Connection string. Include a database name in the path, otherwise Mongoose falls back to `test`. |
+| `MONGODB_URI` | no | `mongodb://localhost:27017/auction-room` | Connection string. Any database segment in the path is ignored — `MONGODB_DB_NAME` decides. |
+| `MONGODB_DB_NAME` | no | `auction` | Database to use. Set explicitly because a connection string without a database segment silently resolves to `test`, which is how production data ends up somewhere nobody intended. |
 | `AUCTION_ITEM_DURATION_SECONDS` | no | `60` | Countdown per item, and the amount an accepted bid restores it to. |
 | `JWT_SECRET` | **yes in production** | dev-only fallback | Signing key. Startup fails if unset when `NODE_ENV=production`. |
 

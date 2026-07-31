@@ -75,6 +75,9 @@ export async function connectDB(): Promise<void> {
     try {
       await mongoose.connect(env.mongodbUri, {
         serverSelectionTimeoutMS: SERVER_SELECTION_TIMEOUT_MS,
+        // Overrides any database segment in the URI, so the target is the same
+        // whichever connection string is supplied.
+        dbName: env.mongodbDbName,
       });
       await migrateParticipantUsernameKeys();
       return;

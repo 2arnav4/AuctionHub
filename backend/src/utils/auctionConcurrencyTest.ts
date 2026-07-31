@@ -23,7 +23,10 @@ let roomId: mongoose.Types.ObjectId;
 
 before(async () => {
   try {
-    await mongoose.connect(env.mongodbUri, { serverSelectionTimeoutMS: 5_000 });
+    await mongoose.connect(env.mongodbUri, {
+      serverSelectionTimeoutMS: 5_000,
+      dbName: env.mongodbDbName,
+    });
     dbAvailable = true;
     const room = await Room.create({
       code: `T${Date.now().toString(36).slice(-5).toUpperCase()}`,
