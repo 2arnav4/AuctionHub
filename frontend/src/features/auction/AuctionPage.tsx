@@ -276,6 +276,9 @@ export function AuctionPage() {
   }
 
   const isAdmin = sessionRole === "admin";
+  // The host runs the auction rather than bidding in it, so listing them here
+  // would misrepresent who you are actually competing against.
+  const bidders = participants.filter((participant) => participant.role !== "admin");
 
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16 max-w-5xl">
@@ -552,11 +555,16 @@ export function AuctionPage() {
             <div className="border border-border bg-surface-raised/40 p-6 rounded-xl space-y-4 shadow-lg flex flex-col">
               <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
                 <Users className="h-4 w-4 text-accent" />
-                Lobby Presence ({participants.length})
+                Bidders ({bidders.length})
               </span>
 
               <div className="space-y-2.5 max-h-[180px] overflow-y-auto pr-1">
-                {participants.map((p) => (
+                {bidders.length === 0 && (
+                  <p className="py-4 text-center text-xs text-text-muted">
+                    No bidders in this room yet.
+                  </p>
+                )}
+                {bidders.map((p) => (
                   <div
                     key={p._id}
                     className="flex items-center justify-between bg-surface-overlay/20 border border-border/30 p-2.5 rounded-lg text-xs"

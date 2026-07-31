@@ -3,6 +3,11 @@ import { Participant } from "../models/participantModel.js";
 import { AuctionItem } from "../models/itemModel.js";
 import { AppError } from "../middleware/errorHandler.js";
 
+// Mirrored by the input limits on the lobby form. Enforced here as well because
+// a maxLength attribute stops a typo, not a crafted request.
+const ITEM_NAME_MAX_LENGTH = 80;
+const DESCRIPTION_MAX_LENGTH = 300;
+
 /**
  * Creates an auction item in the database.
  * Only the room admin can add items, and only before the auction starts (status: 'lobby').
@@ -22,6 +27,12 @@ export async function createAuctionItem(
   }
   if (!name?.trim()) {
     throw new AppError("Item name is required.", 400);
+  }
+  if (name.trim().length > ITEM_NAME_MAX_LENGTH) {
+    throw new AppError(`Item name must be ${ITEM_NAME_MAX_LENGTH} characters or fewer.`, 400);
+  }
+  if (description && description.trim().length > DESCRIPTION_MAX_LENGTH) {
+    throw new AppError(`Description must be ${DESCRIPTION_MAX_LENGTH} characters or fewer.`, 400);
   }
   if (!Number.isFinite(startingBid) || startingBid <= 0) {
     throw new AppError("Starting bid must be positive.", 400);

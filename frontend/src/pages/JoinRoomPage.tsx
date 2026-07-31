@@ -93,23 +93,15 @@ export function JoinRoomPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <label
-              htmlFor="username"
-              className="text-xs font-semibold uppercase tracking-wider text-text-secondary"
-            >
-              Your Username
-            </label>
-            <input
-              id="username"
-              type="text"
-              required
-              readOnly
-              placeholder="e.g. Bob"
-              value={username}
-              className="w-full bg-surface-overlay border border-border/60 text-text-muted rounded-lg px-4 py-2.5 text-sm cursor-not-allowed outline-none select-none"
-            />
-            <p className="text-[10px] text-text-muted">Authenticated user profile. Log out from the navbar header to change accounts.</p>
+          {/* Identity comes from the session, so it is stated rather than asked for. */}
+          <div className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-surface-overlay/40 px-3 py-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent">
+              {username.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] uppercase tracking-wider text-text-muted">Bidding as</p>
+              <p className="truncate text-sm font-medium text-text-primary">{username}</p>
+            </div>
           </div>
 
           <Button

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogIn, ShieldAlert, User, HelpCircle, UserPlus, Lock } from "lucide-react";
+import { LogIn, ShieldAlert, User, HelpCircle, UserPlus, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { login, register } from "../../services/api";
@@ -13,6 +13,7 @@ export function AuthPortal() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const validateClientPassword = (pass: string): string | null => {
     if (pass.length < 8) {
@@ -186,15 +187,27 @@ export function AuthPortal() {
                 <Lock className="h-3 w-3 text-text-muted" />
                 Password
               </label>
-              <input
-                id="auth-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="password123"
-                disabled={loading}
-                className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
-              />
+              <div className="relative">
+                <input
+                  id="auth-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="password123"
+                  disabled={loading}
+                  className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-4 py-2 pr-10 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  disabled={loading}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:text-text-primary hover:bg-surface-raised cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
 
               {activeTab === "signup" && password && (
                 <div className="text-[10px] space-y-1 mt-2 p-2 rounded bg-surface-overlay/50 border border-border/20">

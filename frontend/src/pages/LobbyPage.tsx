@@ -20,6 +20,11 @@ import { addAuctionItem } from "../services/api";
 import { disconnectSocket, getSocket } from "../services/socket";
 import { getErrorMessage } from "../utils/error";
 
+// Mirrors the server-side caps in itemService. Enforced in both places: the
+// input stops a mistake, the service stops a crafted request.
+const ITEM_NAME_MAX_LENGTH = 80;
+const DESCRIPTION_MAX_LENGTH = 300;
+
 export function LobbyPage() {
   // Room codes are stored uppercase, so a lowercase URL must not read as a
   // different room and lock out a session that is actually valid.
@@ -198,6 +203,10 @@ export function LobbyPage() {
   }
 
   const isAdmin = sessionRole === "admin";
+  // The host runs the auction rather than competing in it, and is already shown
+  // in the profile card above, so listing them among the bidders both
+  // double-counts and misrepresents who you are bidding against.
+  const bidders = participants.filter((participant) => participant.role !== "admin");
 
   return (
     <PageContainer className="px-4 py-12 sm:px-6 sm:py-16">
@@ -369,7 +378,7 @@ export function LobbyPage() {
                         {item.name}
                       </h4>
                       {item.description ? (
-                        <p className="text-xs text-text-secondary leading-relaxed line-clamp-2">
+                        <p className="text-xs text-text-secondary leading-relaxed line-clamp-2 break-words">
                           {item.description}
                         </p>
                       ) : (
@@ -419,6 +428,7 @@ export function LobbyPage() {
                     id="itemName"
                     type="text"
                     required
+                    maxLength={ITEM_NAME_MAX_LENGTH}
                     placeholder="e.g. MS Dhoni Signed Bat"
                     value={itemName}
                     onChange={(e) => setItemName(e.target.value)}
@@ -445,16 +455,24 @@ export function LobbyPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="itemDesc" className="text-xs font-medium text-text-secondary">
-                    Description (Optional)
-                  </label>
+                  <div className="flex items-baseline justify-between">
+                    <label htmlFor="itemDesc" className="text-xs font-medium text-text-secondary">
+                      Description (Optional)
+                    </label>
+                    <span
+                      className={`text-[10px] tabular-nums ${itemDesc.length >= DESCRIPTION_MAX_LENGTH ? "text-amber-400" : "text-text-muted"}`}
+                    >
+                      {itemDesc.length}/{DESCRIPTION_MAX_LENGTH}
+                    </span>
+                  </div>
                   <textarea
                     id="itemDesc"
                     placeholder="e.g. Match-worn and signed collectibles."
                     rows={3}
+                    maxLength={DESCRIPTION_MAX_LENGTH}
                     value={itemDesc}
                     onChange={(e) => setItemDesc(e.target.value)}
-                    className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none resize-none"
+                    className="w-full bg-surface-overlay border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-all outline-none resize-none break-words"
                     disabled={itemLoading}
                   />
                 </div>
@@ -486,11 +504,20 @@ export function LobbyPage() {
         <div className="border border-border bg-surface-raised/35 p-6 rounded-xl space-y-4 shadow-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-2 border-b border-border/40 pb-3">
             <Users className="h-3.5 w-3.5 text-accent" />
-            Lobby Bidders ({participants.length})
+            Lobby Bidders ({bidders.length})
           </span>
 
+          {bidders.length === 0 && (
+            <div className="py-8 text-center space-y-1">
+              <p className="text-sm font-medium text-text-secondary">No bidders have joined yet</p>
+              <p className="text-xs text-text-muted">
+                Share the room code above and they will appear here instantly.
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
-            {participants.map((p) => (
+            {bidders.map((p) => (
               <div
                 key={p._id}
                 className="flex items-center justify-between bg-surface-overlay/40 border border-border/50 p-3 rounded-lg"
