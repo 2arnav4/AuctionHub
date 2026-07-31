@@ -6,7 +6,6 @@ import { registerRoomHandlers } from "./handlers/roomHandler.js";
 import { registerAuctionHandlers } from "./handlers/auctionHandler.js";
 import { registerBiddingHandlers } from "./handlers/biddingHandler.js";
 import { registerResolutionHandlers } from "./handlers/resolutionHandler.js";
-import { restoreAuctionTimers } from "./handlers/resolutionHandler.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server(httpServer, {
@@ -24,9 +23,6 @@ export function createSocketServer(httpServer: HttpServer) {
     registerResolutionHandlers(io, socket);
   });
 
-  void restoreAuctionTimers(io).catch((error: unknown) => {
-    console.error("Unable to restore auction timers:", error);
-  });
-
+  // Timer restoration is driven from the entry point once MongoDB is connected.
   return io;
 }
